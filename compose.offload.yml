@@ -1,0 +1,6 @@
+models:
+  chat_model:
+    model: ai/qwen2.5:latest
+
+
+

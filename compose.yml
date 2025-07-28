@@ -1,0 +1,24 @@
+services:
+
+  web-ide:
+    build:
+      context: .
+      dockerfile: golang.Dockerfile
+    models:
+      chat_model:
+        endpoint_var: MODEL_RUNNER_BASE_URL
+        model_var: MODEL_RUNNER_CHAT_MODEL
+    ports:
+      - 3000:3000
+    volumes:
+      - ./workspace:/home/workspace:cached
+      - ./keys:/home/openvscode-server/.ssh
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+    init: true
+    restart: unless-stopped
+
+models:
+  chat_model:
+    model: hf.co/menlo/lucy-128k-gguf:q4_k_m

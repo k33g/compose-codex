@@ -19,6 +19,7 @@ docker buildx bake --push --file docker-bake.hcl
 
 > Create a `.env` file with the above variables:
 ```bash
+KEY_NAME
 echo "SSH_PUBLIC_KEY=$(cat $HOME/.ssh/id_ed25519.pub)" > project.env
 echo "SSH_PRIVATE_KEY=$(cat $HOME/.ssh/id_ed25519 | base64 -w 0)" >> project.env
 ```
