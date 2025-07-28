@@ -1,0 +1,28 @@
+# NOTE: specify the model(s) to use in the web-ide service
+models:
+  lucy:
+    model: hf.co/menlo/lucy-128k-gguf:q4_k_m
+
+services:
+
+  web-ide:
+    image: k33g/compose-pod-golang:1.24.4_0.0.0
+    environment: 
+      # NOTE: allows to use docker model runner from a container
+      - MODEL_RUNNER_HOST=http://model-runner.docker.internal
+    models:
+      lucy:
+        # NOTE: populate the environment variables with the model runner endpoint and model name
+        endpoint_var: MODEL_RUNNER_BASE_URL
+        model_var: MODEL_RUNNER_CHAT_MODEL
+    ports:
+      - 3000:3000
+    volumes:
+      - ./workspace:/home/workspace:cached
+      - ./keys:/home/openvscode-server/.ssh
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+    init: true
+    restart: unless-stopped
+
