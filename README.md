@@ -1,46 +1,20 @@
 # compose-pod-4-go
 
-How to create a Web IDE for Golang + DMR Support
+How to create a Web IDE for Golang
+> 🚧 work in progress
 
-## 1. build the image
-
-The `01-build-image` directory contains the Dockerfile and the `docker-bake.hcl` file to build the image.
-
+**Create a `gitconfig.env` file with the above variables**:
 ```bash
-cd 01-build-image
-docker buildx bake --push --file docker-bake.hcl
+KEY_NAME=github_perso # the name of the ssh key you want to use
+GIT_USER_EMAIL="bob.morane@gmail.com" # your email
+GIT_USER_NAME="bob_morane" # your github handle
+GIT_HOST="github.com" # the git provider (not yet test with gitlab.com)
+REPOSITORY="whales-collective/demo-go-agent.git" # the repository you want to clone
 ```
+> To get the list of the keys available on your machine: `ls $HOME/.ssh/*` and use only the prefix of the file name (not the `.pub` extension)
 
-## 2. start a project
-
-### Git configuration
-
-
-
-> Create a `.env` file with the above variables:
-```bash
-KEY_NAME
-echo "SSH_PUBLIC_KEY=$(cat $HOME/.ssh/id_ed25519.pub)" > project.env
-echo "SSH_PRIVATE_KEY=$(cat $HOME/.ssh/id_ed25519 | base64 -w 0)" >> project.env
-```
-
-```bash
-SSH_PUBLIC_KEY="ssh-ed25519 ... your.name@gmail.com"
-SSH_PRIVATE_KEY="LS0t ..."
-GIT_USER_EMAIL="your.name@gmail.com"
-GIT_USER_NAME="k33g"
-GIT_HOST="github.com"
-PROJECT_NAME="bob-agent"
-```
-
-if the repository already exists on GitHub:
-```bash
-git init
-git add .
-git commit -m "first commit"
-git remote add origin git@github.com:k33g/my-little-demo.git
-git push -u origin main
-```
+Then:
+- start your web IDE with `start-local-workspace.sh`
 
 ## FAQ
 
