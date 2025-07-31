@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a containerized development workspace system that creates Web IDEs for different programming languages (Go, Node.js) using Docker Compose. The project includes:
 
-1. **MCP Server** (`main.go`) - A Model Context Protocol server that provides tools for workspace initialization
+1. **MCP Server** (`main.go`) - A Model Context Protocol server that provides tools for complete workspace lifecycle management
 2. **Bot System** (`bot/`) - An interactive AI agent system that can create and manage development workspaces
 3. **Workspace Templates** (`projects/`) - Pre-configured development environments for different languages
 
@@ -19,21 +19,20 @@ go run main.go
 
 # Run the bot system
 cd bot && go run main.go
+```
 
-# Initialize a new workspace (requires config file)
-./initialize-workspace.sh my.config.env
+### Workspace Management
+**Via MCP Server Tools** (required):
+- Use the MCP tools `initializer_workspace`, `start_workspace`, and `stop_workspace` through the bot system or MCP clients
+- Scripts no longer accept config files and require environment variables to be set by the MCP server
 
-# Start a local workspace
-./start-local-workspace.sh my.config.env
-
-# Start with offload capability
-./start-offload-workspace.sh my.config.env
-
-# Stop workspace
-./stop-workspace.sh my.config.env
-
-# Reset workspace (removes all data)
+**Available Scripts** (internal use only):
+```bash
+# Reset workspace (removes all data) - still uses config files
 ./reset-workspace.sh my.config.env
+
+# Start with offload capability - still uses config files  
+./start-offload-workspace.sh my.config.env
 ```
 
 
@@ -41,7 +40,10 @@ cd bot && go run main.go
 
 ### MCP Server (`main.go`)
 - Implements Model Context Protocol server using `github.com/mark3labs/mcp-go`
-- Provides `initializer_workspace` tool for creating development environments
+- Provides complete workspace lifecycle management tools:
+  - `initializer_workspace` - Create and initialize new development environments
+  - `start_workspace` - Start existing workspaces
+  - `stop_workspace` - Stop running workspaces
 - Runs HTTP server on configurable port (default 9090)
 - Accepts workspace configuration parameters (SSH keys, Git settings, Docker settings)
 
@@ -83,22 +85,38 @@ The bot system requires environment variables for:
 - `MODEL_RUNNER_TOOLS_MODEL` - Tools model name
 - `MCP_HOST_URL` - MCP server URL
 
+## MCP Tools
+
+The MCP server provides three main tools for workspace management:
+
+### `initializer_workspace`
+**Parameters**: `key_name`, `git_user_email`, `git_user_name`, `git_host`, `repository`, `workspace_name`, `projects_directory`, `dockerfile_name`, `compose_file_name`, `offload_override_name`, `http_port`
+- Creates workspace directory structure
+- Sets up Git configuration and SSH keys
+- Clones target repository
+- Copies Docker configuration files
+
+### `start_workspace`  
+**Parameters**: `projects_directory`, `workspace_name`, `http_port`
+- Runs Docker Compose to start Web IDE
+- Provides access URL with workspace path
+
+### `stop_workspace`
+**Parameters**: `projects_directory`, `workspace_name`
+- Stops running Docker containers
+- Shuts down the workspace cleanly
+
 ## Workspace Lifecycle
 
-1. **Initialization** (`initialize-workspace.sh`):
-   - Creates workspace directory structure
-   - Sets up Git configuration and SSH keys
-   - Clones target repository
-   - Copies Docker configuration files
-
-2. **Start** (`start-local-workspace.sh`):
-   - Runs Docker Compose to start Web IDE
-   - Provides access URL with workspace path
-
-3. **Management**: 
+1. **Initialization**: Use `initializer_workspace` MCP tool (sets environment variables and executes `initialize-workspace.sh`)
+2. **Start**: Use `start_workspace` MCP tool (sets environment variables and executes `start-local-workspace.sh`)
+3. **Stop**: Use `stop_workspace` MCP tool (sets environment variables and executes `stop-workspace.sh`)
+4. **Management**: 
    - Web IDE accessible at `http://localhost:{HTTP_PORT}/?folder=/home/workspace/{PROJECT_NAME}`
    - Docker socket mounted for container operations within workspace
    - SSH keys mounted for Git operations
+
+**Note**: The shell scripts now expect environment variables instead of config files and are designed to be called by the MCP server.
 
 ## Development Notes
 
