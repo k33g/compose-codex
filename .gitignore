@@ -1,5 +1,5 @@
 project.env
-gitconfig.env
-workspace
+*.config.env
+*-workspace
 tmp
 keys

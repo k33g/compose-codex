@@ -1,12 +1,30 @@
 #!/bin/bash
+: <<'COMMENT'
+Run this script to initialize the workspace for the project.
+```
+./initialize-workspace.sh config_file.env
+```
+For example:
+```
+./initialize-workspace.sh gitconfig.env
+```
+This script will create a workspace directory, set up the necessary environment variables, and configure Git.
+COMMENT
 
+source $1
+
+# Check if the configuration file exists
+if [ ! -f "$1" ]; then
+    echo "❌ Error: $1 file not found"
+    exit 1
+fi
 # --------------------------------------
 # Initialize workspace 
 # --------------------------------------
 
-mkdir -p workspace
+mkdir -p ${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/workspace
 
-cat > "workspace/.bashrc" << 'EOF'
+cat > "${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/workspace/.bashrc" << 'EOF'
 sudo chmod 666 /var/run/docker.sock
 
 parse_git_branch() {
@@ -23,13 +41,6 @@ echo "✅ Workspace initialized with .bashrc"
 #  Generate project.env 
 # --------------------------------------
 
-# Check if gitconfig.env exists
-if [ ! -f "gitconfig.env" ]; then
-    echo "❌ Error: gitconfig.env file not found"
-    exit 1
-fi
-
-source gitconfig.env
 
 echo "SSH_PUBLIC_KEY=$(cat $HOME/.ssh/${KEY_NAME}.pub)" > project.env
 echo "SSH_PRIVATE_KEY=$(cat $HOME/.ssh/${KEY_NAME} | base64 -w 0)" >> project.env
@@ -52,7 +63,8 @@ fi
 source project.env
 
 # Create keys directory if it doesn't exist
-mkdir -p keys
+mkdir -p ${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/keys
+
 
 USER_NAME=openvscode-server
 PRIVATE_KEY_NAME=git_repository_key
@@ -60,53 +72,70 @@ PUBLIC_KEY_NAME=git_repository_key.pub
 echo "🚀 Initializing the environment..."
 
 echo "🤗 Configuring Git $USER_NAME"
-if [ -f "./workspace/.ssh/config" ]; then
+if [ -f "./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/workspace/.ssh/config" ]; then
     echo "🙂 Git configuration already exists"
 else
     
     echo "📦 Configuring git user"
 
-    echo "[user]" > ./workspace/.gitconfig
-    echo "    email = ${GIT_USER_EMAIL}" >> ./workspace/.gitconfig
-    echo "    name = ${GIT_USER_NAME}" >> ./workspace/.gitconfig
-    echo "[safe]" >> ./workspace/.gitconfig
+    echo "[user]" > ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/workspace/.gitconfig
+    echo "    email = ${GIT_USER_EMAIL}" >> ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/workspace/.gitconfig
+    echo "    name = ${GIT_USER_NAME}" >> ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/workspace/.gitconfig
+    echo "[safe]" >> ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/workspace/.gitconfig
     #TODO: how to add the projects
     #echo "    directory = ./workspace/${PROJECT_NAME}" >> ./workspace/.gitconfig
-    echo "[http]" >> ./workspace/.gitconfig
-    echo "    postBuffer = 524288000" >> ./workspace/.gitconfig
-    echo "    lowSpeedLimit = 1000" >> ./workspace/.gitconfig
-    echo "    lowSpeedTime = 300" >> ./workspace/.gitconfig
-    echo "[init]" >> ./workspace/.gitconfig
-    echo "    defaultBranch = main" >> ./workspace/.gitconfig
+    echo "[http]" >> ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/workspace/.gitconfig
+    echo "    postBuffer = 524288000" >> ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/workspace/.gitconfig
+    echo "    lowSpeedLimit = 1000" >> ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/workspace/.gitconfig
+    echo "    lowSpeedTime = 300" >> ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/workspace/.gitconfig
+    echo "[init]" >> ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/workspace/.gitconfig
+    echo "    defaultBranch = main" >> ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/workspace/.gitconfig
 
-    chmod 644 ./workspace/.gitconfig
+    chmod 644 ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/workspace/.gitconfig
     
     echo "🤗 Configuring Git"
 
     # ./workspace/keys maps on ./workspace/.ssh
-    echo "Host $GIT_HOST" > ./keys/config
-    echo "    HostName $GIT_HOST" >> ./keys/config
-    echo "    User git" >> ./keys/config
-    echo "    IdentityFile ~/.ssh/$PRIVATE_KEY_NAME" >> ./keys/config
-    echo "    StrictHostKeyChecking no" >> ./keys/config
+    echo "Host $GIT_HOST" > ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/keys/config
+    echo "    HostName $GIT_HOST" >> ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/keys/config
+    echo "    User git" >> ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/keys/config
+    echo "    IdentityFile ~/.ssh/$PRIVATE_KEY_NAME" >> ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/keys/config
+    echo "    StrictHostKeyChecking no" >> ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/keys/config
 
-    chmod 600 ./keys/config
+    chmod 600 ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/keys/config
 
     # [[ ! -z $SSH_PUBLIC_KEY  ]] &&
-    echo $SSH_PUBLIC_KEY > ./keys/$PUBLIC_KEY_NAME 
+    echo $SSH_PUBLIC_KEY > ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/keys/$PUBLIC_KEY_NAME
     # [[ ! -z $SSH_PRIVATE_KEY  ]] &&
-    echo $SSH_PRIVATE_KEY | base64 -d > ./keys/$PRIVATE_KEY_NAME 
-    chmod 600 ./keys/$PRIVATE_KEY_NAME
+    echo $SSH_PRIVATE_KEY | base64 -d > ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/keys/$PRIVATE_KEY_NAME
+    chmod 600 ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/keys/$PRIVATE_KEY_NAME
 
 fi
 
 # --------------------------------------
 # Clone the project repository
 # --------------------------------------
-cd workspace
+cd ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/workspace
 git clone git@github.com:${REPOSITORY} || {
     echo "❌ Error: Failed to clone repository ${REPOSITORY}"
     exit 1
 }
 
 echo "✅ Project ${REPOSITORY} cloned into workspace"
+
+# --------------------------------------
+# Copy Dockerfile and compose files
+# --------------------------------------
+cd ../../..
+cp ./${DOCKERFILE_NAME} ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/Dockerfile
+cp ./${COMPOSE_FILE_NAME} ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}
+cp ./${OFFLOAD_OVERRIDE_NAME} ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}
+echo "✅ Dockerfile and compose files copied to workspace"
+
+echo "HTTP_PORT=${HTTP_PORT}" > ./${PROJECTS_DIRECTORY}/${WORKSPACE_NAME}/.env
+
+# --------------------------------------
+# Remove the project.env file
+# --------------------------------------
+rm -f project.env
+echo "✅ project.env file removed"
