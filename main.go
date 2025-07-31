@@ -2,9 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
-	"strings"
+	"os/exec"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -53,7 +54,7 @@ func main() {
 		),
 		mcp.WithString("dockerfile_name",
 			mcp.Required(),
-			mcp.Description("The name of the Dockerfile to use for the workspace. The Dockerfile must be available in the current directory. It can be any name you want."),	
+			mcp.Description("The name of the Dockerfile to use for the workspace. The Dockerfile must be available in the current directory. It can be any name you want."),
 		),
 		mcp.WithString("compose_file_name",
 			mcp.Required(),
@@ -91,7 +92,7 @@ func main() {
 			repository == "" || workspaceName == "" || projectsDirectory == "" ||
 			dockerfileName == "" || composeFileName == "" || offloadOverrideName == "" || httpPort == "" {
 			return mcp.NewToolResultText("Please provide all the required arguments: key_name, git_user_email, git_user_name, git_host, repository, workspace_name, projects_directory, dockerfile_name, compose_file_name, offload_override_name, http_port"), nil
-		}	
+		}
 		// Create the workspace
 		log.Println("Creating workspace", workspaceName, "in directory", projectsDirectory)
 		log.Println("Using Dockerfile", dockerfileName, "and compose file", composeFileName)
@@ -101,16 +102,144 @@ func main() {
 		log.Println("Using Git user email", gitUserEmail, "and user name", gitUserName)
 		log.Println("Using Git host", gitHost)
 		log.Println("Using repository", repository)
-		// Here you would implement the logic to create the workspace
-		// For now, we just return a success message
-		return mcp.NewToolResultText("Workspace "+workspaceName+" created successfully in directory "+projectsDirectory+
-			" using Dockerfile "+dockerfileName+" and compose file "+composeFileName+
-			" with offload override file "+offloadOverrideName+" and HTTP port "+httpPort+
-			" using SSH key "+keyName+" and Git user email "+gitUserEmail+" and user name "+gitUserName+
-			" and Git host "+gitHost+" and repository "+repository), nil
+
+		// Set environment variables for the script
+		env := os.Environ()
+		env = append(env, "KEY_NAME="+keyName)
+		env = append(env, "GIT_USER_EMAIL="+gitUserEmail)
+		env = append(env, "GIT_USER_NAME="+gitUserName)
+		env = append(env, "GIT_HOST="+gitHost)
+		env = append(env, "REPOSITORY="+repository)
+		env = append(env, "WORKSPACE_NAME="+workspaceName)
+		env = append(env, "PROJECTS_DIRECTORY="+projectsDirectory)
+		env = append(env, "DOCKERFILE_NAME="+dockerfileName)
+		env = append(env, "COMPOSE_FILE_NAME="+composeFileName)
+		env = append(env, "OFFLOAD_OVERRIDE_NAME="+offloadOverrideName)
+		env = append(env, "HTTP_PORT="+httpPort)
+
+		// Execute the initialize-workspace.sh script
+		cmd := exec.Command("./initialize-workspace.sh")
+		cmd.Env = env
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("Error executing initialize-workspace.sh: %v", err)
+			log.Printf("Script output: %s", string(output))
+			return mcp.NewToolResultText(fmt.Sprintf("Failed to create workspace: %v\nOutput: %s", err, string(output))), nil
+		}
+
+		log.Printf("Workspace creation successful. Script output: %s", string(output))
+		return mcp.NewToolResultText(fmt.Sprintf("Workspace %s created successfully!\n\nScript output:\n%s", workspaceName, string(output))), nil
 	})
 
+	// =================================================
+	// START WORKSPACE TOOL:
+	// =================================================
+	startWorkspace := mcp.NewTool("start_workspace",
+		mcp.WithDescription("Start a local workspace that has been previously initialized."),
+		mcp.WithString("projects_directory",
+			mcp.Required(),
+			mcp.Description("The directory where the workspace is located."),
+		),
+		mcp.WithString("workspace_name",
+			mcp.Required(),
+			mcp.Description("The name of the workspace to start."),
+		),
+		mcp.WithString("http_port",
+			mcp.Required(),
+			mcp.Description("The port to use for the web IDE. The port must be available in the current directory. It can be any port you want."),
+		),
+	)
+	s.AddTool(startWorkspace, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := request.GetArguments()
+		// Check if the required arguments are provided
+		if len(args) == 0 {
+			return mcp.NewToolResultText("Please provide the required arguments: projects_directory, workspace_name"), nil
+		}
+		// Extract the arguments
+		projectsDirectory, _ := args["projects_directory"].(string)
+		workspaceName, _ := args["workspace_name"].(string)
+		httpPort, _ := args["http_port"].(string)
 
+		// Check if the required arguments are provided
+		if projectsDirectory == "" || workspaceName == "" || httpPort == "" {
+			return mcp.NewToolResultText("Please provide all the required arguments: projects_directory, workspace_name"), nil
+		}
+
+		// Start the workspace
+		log.Println("Starting workspace", workspaceName, "in directory", projectsDirectory)
+
+		// Set environment variables for the script
+		env := os.Environ()
+		env = append(env, "PROJECTS_DIRECTORY="+projectsDirectory)
+		env = append(env, "WORKSPACE_NAME="+workspaceName)
+		env = append(env, "HTTP_PORT="+httpPort)
+
+		// Execute the start-local-workspace.sh script
+		cmd := exec.Command("./start-local-workspace.sh")
+		cmd.Env = env
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("Error executing start-local-workspace.sh: %v", err)
+			log.Printf("Script output: %s", string(output))
+			return mcp.NewToolResultText(fmt.Sprintf("Failed to start workspace: %v\nOutput: %s", err, string(output))), nil
+		}
+
+		log.Printf("Workspace start successful. Script output: %s", string(output))
+		return mcp.NewToolResultText(fmt.Sprintf("Workspace %s started successfully!\n\nScript output:\n%s", workspaceName, string(output))), nil
+	})
+
+	// =================================================
+	// STOP WORKSPACE TOOL:
+	// =================================================
+	stopWorkspace := mcp.NewTool("stop_workspace",
+		mcp.WithDescription("Stop a running workspace."),
+		mcp.WithString("projects_directory",
+			mcp.Required(),
+			mcp.Description("The directory where the workspace is located."),
+		),
+		mcp.WithString("workspace_name",
+			mcp.Required(),
+			mcp.Description("The name of the workspace to stop."),
+		),
+	)
+	s.AddTool(stopWorkspace, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := request.GetArguments()
+		// Check if the required arguments are provided
+		if len(args) == 0 {
+			return mcp.NewToolResultText("Please provide the required arguments: projects_directory, workspace_name"), nil
+		}
+		// Extract the arguments
+		projectsDirectory, _ := args["projects_directory"].(string)
+		workspaceName, _ := args["workspace_name"].(string)
+		// Check if the required arguments are provided
+		if projectsDirectory == "" || workspaceName == "" {
+			return mcp.NewToolResultText("Please provide all the required arguments: projects_directory, workspace_name"), nil
+		}
+		
+		// Stop the workspace
+		log.Println("Stopping workspace", workspaceName, "in directory", projectsDirectory)
+		
+		// Set environment variables for the script
+		env := os.Environ()
+		env = append(env, "PROJECTS_DIRECTORY="+projectsDirectory)
+		env = append(env, "WORKSPACE_NAME="+workspaceName)
+
+		// Execute the stop-workspace.sh script
+		cmd := exec.Command("./stop-workspace.sh")
+		cmd.Env = env
+		
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("Error executing stop-workspace.sh: %v", err)
+			log.Printf("Script output: %s", string(output))
+			return mcp.NewToolResultText(fmt.Sprintf("Failed to stop workspace: %v\nOutput: %s", err, string(output))), nil
+		}
+		
+		log.Printf("Workspace stop successful. Script output: %s", string(output))
+		return mcp.NewToolResultText(fmt.Sprintf("Workspace %s stopped successfully!\n\nScript output:\n%s", workspaceName, string(output))), nil
+	})
 
 	// Start the HTTP server
 	httpPort := os.Getenv("HTTP_PORT")
@@ -123,30 +252,4 @@ func main() {
 	server.NewStreamableHTTPServer(s,
 		server.WithEndpointPath("/mcp"),
 	).Start(":" + httpPort)
-}
-
-func chooseCharacterBySpeciesHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args := request.GetArguments()
-	// Check if the species_name argument is provided
-	if len(args) == 0 {
-		return mcp.NewToolResultText("zephyr"), nil
-	}
-	var content = "zephyr" // default character
-	if speciesName, ok := args["species_name"]; ok {
-
-		switch strings.ToLower(speciesName.(string)) {
-		case "humain":
-			content = "aldric"
-		case "orc":
-			content = "grash"
-		case "nain":
-			content = "thorin"
-		case "elfe", "elf":
-			content = "lyralei"
-		default:
-			content = "zephyr"
-		}
-	}
-	return mcp.NewToolResultText(content), nil
-
 }

@@ -1,0 +1,149 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+This is a containerized development workspace system that creates Web IDEs for different programming languages (Go, Node.js) using Docker Compose. The project includes:
+
+1. **MCP Server** (`main.go`) - A Model Context Protocol server that provides tools for complete workspace lifecycle management
+2. **Bot System** (`bot/`) - An interactive AI agent system that can create and manage development workspaces
+3. **Workspace Templates** (`projects/`) - Pre-configured development environments for different languages
+
+## Key Commands
+
+### Development Commands
+```bash
+# Run the MCP server
+go run main.go
+
+# Run the bot system (requires environment variables)
+cd bot && MODEL_RUNNER_BASE_URL=http://localhost:12434/engines/llama.cpp/v1 \
+MODEL_RUNNER_CHAT_MODEL=hf.co/menlo/lucy-128k-gguf:q4_k_m \
+MODEL_RUNNER_TOOLS_MODEL=hf.co/menlo/lucy-128k-gguf:q4_k_m \
+MCP_HOST_URL=http://localhost:9090/mcp \
+go run agents.go main.go
+
+# Or use the provided script (sets environment variables automatically)
+cd bot && ./start.client.sh
+```
+
+### Workspace Management
+**Via MCP Server Tools** (required):
+- Use the MCP tools `initializer_workspace`, `start_workspace`, and `stop_workspace` through the bot system or MCP clients
+- Scripts no longer accept config files and require environment variables to be set by the MCP server
+
+**Available Scripts** (internal use only):
+```bash
+# Reset workspace (removes all data) - still uses config files
+./reset-workspace.sh my.config.env
+
+# Start with offload capability - still uses config files  
+./start-offload-workspace.sh my.config.env
+```
+
+
+## Architecture
+
+### MCP Server (`main.go`)
+- Implements Model Context Protocol server using `github.com/mark3labs/mcp-go`
+- Provides complete workspace lifecycle management tools:
+  - `initializer_workspace` - Create and initialize new development environments
+  - `start_workspace` - Start existing workspaces
+  - `stop_workspace` - Stop running workspaces
+- Runs HTTP server on configurable port (default 9090)
+- Accepts workspace configuration parameters (SSH keys, Git settings, Docker settings)
+
+### Bot System (`bot/`)
+- **Main Entry** (`bot/main.go`) - Interactive CLI bot using OpenAI API
+- **Agents** (`bot/agents/`) - Chat and tools detection agents
+- **Config** (`bot/config/`) - Configuration management for model endpoints
+- **Tools** (`bot/tools/`) - MCP client integration for tool execution
+- **UI** (`bot/ui/`) - Terminal UI components using Charm bracelet libraries
+
+### Workspace System
+- **Templates**: Language-specific Dockerfiles (`golang.Dockerfile`, `nodejs.Dockerfile`)
+- **Compose Files**: Docker Compose configurations with model integration
+- **Initialization**: Automated Git setup, SSH key management, and project cloning
+- **SSH Integration**: Manages SSH keys for Git repository access
+
+## Configuration
+
+### Environment Configuration
+Create a `my.config.env` file with:
+```env
+KEY_NAME=github_perso                           # SSH key name (without .pub extension)
+GIT_USER_EMAIL=user@example.com                # Git user email
+GIT_USER_NAME=username                          # Git username
+GIT_HOST=github.com                             # Git host
+REPOSITORY=owner/repo.git                       # Repository to clone
+WORKSPACE_NAME=workspace-name                   # Workspace directory name
+PROJECTS_DIRECTORY=projects                     # Base projects directory
+DOCKERFILE_NAME=golang.Dockerfile               # Dockerfile to use
+COMPOSE_FILE_NAME=compose.yml                   # Compose file to use
+OFFLOAD_OVERRIDE_NAME=compose.offload.yml       # Offload override file
+HTTP_PORT=5555                                  # Web IDE port
+```
+
+### Bot Configuration
+The bot system requires these environment variables:
+```env
+MODEL_RUNNER_BASE_URL=http://localhost:12434/engines/llama.cpp/v1
+MODEL_RUNNER_CHAT_MODEL=hf.co/menlo/lucy-128k-gguf:q4_k_m
+MODEL_RUNNER_TOOLS_MODEL=hf.co/menlo/lucy-128k-gguf:q4_k_m
+MCP_HOST_URL=http://localhost:9090/mcp
+```
+
+**Environment Variable Descriptions:**
+- `MODEL_RUNNER_BASE_URL` - Base URL for the model API endpoint
+- `MODEL_RUNNER_CHAT_MODEL` - Model name for chat completions
+- `MODEL_RUNNER_TOOLS_MODEL` - Model name for tools detection
+- `MCP_HOST_URL` - MCP server URL (must match MCP server host/port)
+
+## MCP Tools
+
+The MCP server provides three main tools for workspace management:
+
+### `initializer_workspace`
+**Parameters**: `key_name`, `git_user_email`, `git_user_name`, `git_host`, `repository`, `workspace_name`, `projects_directory`, `dockerfile_name`, `compose_file_name`, `offload_override_name`, `http_port`
+- Creates workspace directory structure
+- Sets up Git configuration and SSH keys
+- Clones target repository
+- Copies Docker configuration files
+
+### `start_workspace`  
+**Parameters**: `projects_directory`, `workspace_name`, `http_port`
+- Runs Docker Compose to start Web IDE
+- Provides access URL with workspace path
+
+### `stop_workspace`
+**Parameters**: `projects_directory`, `workspace_name`
+- Stops running Docker containers
+- Shuts down the workspace cleanly
+
+## Workspace Lifecycle
+
+1. **Initialization**: Use `initializer_workspace` MCP tool (sets environment variables and executes `initialize-workspace.sh`)
+2. **Start**: Use `start_workspace` MCP tool (sets environment variables and executes `start-local-workspace.sh`)
+3. **Stop**: Use `stop_workspace` MCP tool (sets environment variables and executes `stop-workspace.sh`)
+4. **Management**: 
+   - Web IDE accessible at `http://localhost:{HTTP_PORT}/?folder=/home/workspace/{PROJECT_NAME}`
+   - Docker socket mounted for container operations within workspace
+   - SSH keys mounted for Git operations
+
+**Note**: The shell scripts now expect environment variables instead of config files and are designed to be called by the MCP server.
+
+## Development Notes
+
+- **Go Version**: Requires Go 1.24.0+
+- **Docker**: Requires Docker with socket access (`/var/run/docker.sock`)
+- **SSH Keys**: Must exist in `~/.ssh/` directory
+- **Git Integration**: Automatic Git configuration with safe directory settings
+- **Model Integration**: Supports local model runners via configurable endpoints
+
+## File Structure Patterns
+
+- `projects/{language}-workspace/` - Language-specific workspace templates
+- `bot/` - All bot-related Go modules
+- `tickets/` - Development tasks and feature requests
+- Docker files follow pattern: `{language}.Dockerfile`
