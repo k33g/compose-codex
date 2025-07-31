@@ -14,11 +14,18 @@ This is a containerized development workspace system that creates Web IDEs for d
 
 ### Development Commands
 ```bash
-# Build and run the MCP server
+# Run the MCP server
 go run main.go
 
-# Run the bot system
-cd bot && go run main.go
+# Run the bot system (requires environment variables)
+cd bot && MODEL_RUNNER_BASE_URL=http://localhost:12434/engines/llama.cpp/v1 \
+MODEL_RUNNER_CHAT_MODEL=hf.co/menlo/lucy-128k-gguf:q4_k_m \
+MODEL_RUNNER_TOOLS_MODEL=hf.co/menlo/lucy-128k-gguf:q4_k_m \
+MCP_HOST_URL=http://localhost:9090/mcp \
+go run agents.go main.go
+
+# Or use the provided script (sets environment variables automatically)
+cd bot && ./start.client.sh
 ```
 
 ### Workspace Management
@@ -79,11 +86,19 @@ HTTP_PORT=5555                                  # Web IDE port
 ```
 
 ### Bot Configuration
-The bot system requires environment variables for:
-- `MODEL_RUNNER_BASE_URL` - Base URL for the model API
-- `MODEL_RUNNER_CHAT_MODEL` - Chat model name
-- `MODEL_RUNNER_TOOLS_MODEL` - Tools model name
-- `MCP_HOST_URL` - MCP server URL
+The bot system requires these environment variables:
+```env
+MODEL_RUNNER_BASE_URL=http://localhost:12434/engines/llama.cpp/v1
+MODEL_RUNNER_CHAT_MODEL=hf.co/menlo/lucy-128k-gguf:q4_k_m
+MODEL_RUNNER_TOOLS_MODEL=hf.co/menlo/lucy-128k-gguf:q4_k_m
+MCP_HOST_URL=http://localhost:9090/mcp
+```
+
+**Environment Variable Descriptions:**
+- `MODEL_RUNNER_BASE_URL` - Base URL for the model API endpoint
+- `MODEL_RUNNER_CHAT_MODEL` - Model name for chat completions
+- `MODEL_RUNNER_TOOLS_MODEL` - Model name for tools detection
+- `MCP_HOST_URL` - MCP server URL (must match MCP server host/port)
 
 ## MCP Tools
 
