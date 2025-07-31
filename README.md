@@ -1,6 +1,6 @@
-# compose-pod-4-go
+# compose-codex
 
-How to create a Web IDE for Golang
+How to create a Web IDE for Golang, NodeJS, ...
 > 🚧 work in progress
 
 **Create a `my.config.env` file with the above variables**:
