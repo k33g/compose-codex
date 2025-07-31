@@ -1,5 +1,5 @@
 project.env
 *.config.env
-*-workspace
 tmp
 keys
+*/*-workspace/
