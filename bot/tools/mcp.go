@@ -39,7 +39,7 @@ func NewMCPClient(ctx context.Context, mcpHostURL string) (*MCPClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("Streamable HTTP client connected & initialized with server!", result)
+	fmt.Println("Streamable HTTP client connected & initialized with server!", result.ServerInfo)
 
 	toolsRequest := mcp.ListToolsRequest{}
 	mcpTools, err := mcpClient.ListTools(ctx, toolsRequest)

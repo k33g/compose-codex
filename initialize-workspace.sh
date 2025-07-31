@@ -1,23 +1,10 @@
 #!/bin/bash
 : <<'COMMENT'
-Run this script to initialize the workspace for the project.
-```
-./initialize-workspace.sh config_file.env
-```
-For example:
-```
-./initialize-workspace.sh gitconfig.env
-```
-This script will create a workspace directory, set up the necessary environment variables, and configure Git.
+This script will create a workspace directory, 
+set up the necessary environment variables, and configure Git.
+The script is started by the MCP server.
 COMMENT
 
-source $1
-
-# Check if the configuration file exists
-if [ ! -f "$1" ]; then
-    echo "❌ Error: $1 file not found"
-    exit 1
-fi
 # --------------------------------------
 # Initialize workspace 
 # --------------------------------------
