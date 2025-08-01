@@ -147,6 +147,9 @@ func main() {
 
 				fmt.Println("💡 tool detection:", toolCall.Function.Name, toolCall.Function.Arguments)
 				// NOTE: Call the tool using the MCP client
+				fmt.Println("🟢 Arguments:",toolCall.Function.Arguments)
+
+
 				toolResponse, err := mcpClient.CallTool(ctx, toolCall.Function.Name, toolCall.Function.Arguments)
 
 				if err != nil {

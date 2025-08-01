@@ -66,6 +66,7 @@
             border: none;
             border-bottom: 2px solid transparent;
             font-size: 16px;
+            color: #666666;
         }
         .tab.active {
             background-color: white;
@@ -119,25 +120,15 @@
         </p>
         
         <div class="tabs">
-            <button class="tab active" data-tab="test">Test Backend</button>
-            <button class="tab" data-tab="config">Workspace Config</button>
-            <button class="tab" data-tab="chat">Ask Compose Codex</button>
+            <button class="tab active" data-tab="config">Workspace Config</button>
+            <button class="tab" data-tab="workspaces">Workspaces List</button>
+            <button class="tab" data-tab="dockerfiles">Dockerfiles</button>
+            <button class="tab" data-tab="test">Test Backend</button>
         </div>
 
-        <div id="test-tab" class="tab-content active">
+        <div id="config-tab" class="tab-content active">
             <p class="description">
-                Press the button below to test the backend connection. The response will appear in the text area.
-            </p>
-            <div style="margin-bottom: 20px; display: flex; gap: 10px;">
-                <button id="callBackend">Call Backend</button>
-                <button id="clearTestResponse">Clear</button>
-            </div>
-            <textarea id="response" placeholder="Backend response will appear here..." readonly></textarea>
-        </div>
-
-        <div id="config-tab" class="tab-content">
-            <p class="description">
-                Configure your workspace settings below and submit to create a new development environment.
+                Configure your workspace settings below. Initialize to create the workspace structure, then start/stop to manage it.
             </p>
             
             <form id="configForm">
@@ -166,7 +157,7 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label for="gitHost">Git Host:</label>
-                        <input type="text" id="gitHost" name="git_host" value="github.com" required>
+                        <input type="text" id="gitHost" name="git_host" value="github.com" required disabled>
                     </div>
                     <div class="form-group">
                         <label for="repository">Repository:</label>
@@ -177,64 +168,105 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label for="projectsDirectory">Projects Directory:</label>
-                        <input type="text" id="projectsDirectory" name="projects_directory" value="projects" required>
+                        <input type="text" id="projectsDirectory" name="projects_directory" value="projects" required disabled>
                     </div>
                     <div class="form-group">
                         <label for="dockerfileName">Dockerfile Name:</label>
-                        <input type="text" id="dockerfileName" name="dockerfile_name" value="golang.Dockerfile" required>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <select id="dockerfileName" name="dockerfile_name" required style="flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                                <option value="">Loading Dockerfiles...</option>
+                            </select>
+                            <button type="button" id="refreshDockerfiles" style="padding: 8px 12px; background-color: #007cbb; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">🔄</button>
+                        </div>
                     </div>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
                         <label for="composeFileName">Compose File:</label>
-                        <input type="text" id="composeFileName" name="compose_file_name" value="compose.yml" required>
+                        <input type="text" id="composeFileName" name="compose_file_name" value="compose.yml" required disabled>
                     </div>
                     <div class="form-group">
                         <label for="offloadOverride">Offload Override:</label>
-                        <input type="text" id="offloadOverride" name="offload_override_name" value="compose.offload.yml">
+                        <input type="text" id="offloadOverride" name="offload_override_name" value="compose.offload.yml" disabled>
                     </div>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
                         <label for="httpPort">HTTP Port:</label>
-                        <input type="number" id="httpPort" name="http_port" value="5555" min="1000" max="65535" required>
+                        <input type="number" id="httpPort" name="http_port" value="0" min="0" max="65535" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="mcpServerUrl">MCP Server URL:</label>
+                        <input type="url" id="mcpServerUrl" name="mcp_server_url" placeholder="http://host.docker.internal:9090/mcp" value="http://host.docker.internal:9090/mcp">
                     </div>
                 </div>
 
             </form>
 
             <div style="margin: 20px 0; display: flex; gap: 10px;">
-                <button type="button" id="submitConfig">Create Workspace</button>
-                <button type="button" id="startWorkspace">Start Workspace</button>
-                <button type="button" id="stopWorkspace">Stop Workspace</button>
+                <button type="button" id="submitConfig">Initialize Workspace</button>
+                <button type="button" id="clearForm">Clear Form</button>
                 <button type="button" id="clearConfigResponse">Clear</button>
             </div>
 
             <textarea id="configResponse" placeholder="Configuration response will appear here..." readonly></textarea>
         </div>
 
-        <div id="chat-tab" class="tab-content">
+        <div id="workspaces-tab" class="tab-content">
             <p class="description">
-                Ask questions about Compose Codex, workspace management, or Docker development environments.
+                View and manage your created workspaces. Select a workspace from the list to see its details.
             </p>
             
-            <div class="form-group">
-                <label for="chatQuestion">Your Question:</label>
-                <textarea id="chatQuestion" placeholder="Type your question here..." rows="3" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-family: Arial, sans-serif; resize: vertical;"></textarea>
-            </div>
-
             <div style="margin: 20px 0; display: flex; gap: 10px;">
-                <button type="button" id="askQuestion">Ask Question</button>
-                <button type="button" id="clearChatResponse">Clear Response</button>
+                <button type="button" id="startSelectedWorkspace" disabled>Start Workspace</button>
+                <button type="button" id="stopSelectedWorkspace" disabled>Stop Workspace</button>
+                <button type="button" id="removeSelectedWorkspace" disabled>Remove Workspace</button>
+                <button type="button" id="clearWorkspacesList">Clear All</button>
             </div>
 
             <div class="form-group">
-                <label for="chatResponse">Response:</label>
-                <textarea id="chatResponse" placeholder="Response will appear here..." readonly rows="6" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; resize: vertical;"></textarea>
+                <label for="workspacesList">Created Workspaces:</label>
+                <select id="workspacesList" size="8" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; resize: vertical;">
+                    <option value="">No workspaces created yet...</option>
+                </select>
+            </div>
+
+            <div class="form-group" style="margin-top: 20px;">
+                <label for="workspaceDetails">Workspace Details:</label>
+                <textarea id="workspaceDetails" placeholder="Select a workspace from the list above to see its details..." readonly rows="8" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; resize: vertical;"></textarea>
             </div>
         </div>
+
+
+        <div id="dockerfiles-tab" class="tab-content">
+            <p class="description">
+                View available Dockerfile templates in the current directory. These can be used when creating new workspaces.
+            </p>
+            
+            <div style="margin: 20px 0; display: flex; gap: 10px;">
+                <button type="button" id="loadDockerfiles">Load Dockerfiles</button>
+                <button type="button" id="clearDockerfilesResponse">Clear</button>
+            </div>
+
+            <div class="form-group">
+                <label for="dockerfilesResponse">Available Dockerfiles:</label>
+                <textarea id="dockerfilesResponse" placeholder="Click 'Load Dockerfiles' to see available Dockerfile templates..." readonly rows="10" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; resize: vertical;"></textarea>
+            </div>
+        </div>
+
+        <div id="test-tab" class="tab-content">
+            <p class="description">
+                Press the button below to test the backend connection. The response will appear in the text area.
+            </p>
+            <div style="margin-bottom: 20px; display: flex; gap: 10px;">
+                <button id="callBackend">Call Backend</button>
+                <button id="clearTestResponse">Clear</button>
+            </div>
+            <textarea id="response" placeholder="Backend response will appear here..." readonly></textarea>
+        </div>
+
     </div>
 
     <script type="module" src="main.js"></script>

@@ -3,3 +3,5 @@ project.env
 tmp
 keys
 */*-workspace/
+projects/*
+!projects/README.md
