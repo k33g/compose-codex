@@ -1,0 +1,18 @@
+in /bakend/main.go
+
+add 2 endpoints:
+
+- router.POST("/workspace/start", startWorkspaceHandler)
+like for the configHandler, use config ConfigPayload
+- router.POST("/workspace/stop", stopWorkspaceHandler)
+like for the configHandler, use config ConfigPayload
+
+
+in /ui/index.html
+in the workspace config tab add:
+- a start workspace button, will trigger /workspace/start with the config data
+- a stop workspace button, will trigger /workspace/stop with the config data
+display the results in <textarea id="configResponse" 
+
+
+add a tab ask compose codex
