@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -239,6 +241,146 @@ func main() {
 		
 		log.Printf("Workspace stop successful. Script output: %s", string(output))
 		return mcp.NewToolResultText(fmt.Sprintf("Workspace %s stopped successfully!\n\nScript output:\n%s", workspaceName, string(output))), nil
+	})
+
+	// =================================================
+	// REMOVE WORKSPACE TOOL:
+	// =================================================
+	removeWorkspace := mcp.NewTool("remove_workspace",
+		mcp.WithDescription("Remove a workspace and clean up all associated resources."),
+		mcp.WithString("projects_directory",
+			mcp.Required(),
+			mcp.Description("The directory where the workspace is located."),
+		),
+		mcp.WithString("workspace_name",
+			mcp.Required(),
+			mcp.Description("The name of the workspace to remove."),
+		),
+	)
+	s.AddTool(removeWorkspace, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := request.GetArguments()
+		// Check if the required arguments are provided
+		if len(args) == 0 {
+			return mcp.NewToolResultText("Please provide the required arguments: projects_directory, workspace_name"), nil
+		}
+		// Extract the arguments
+		projectsDirectory, _ := args["projects_directory"].(string)
+		workspaceName, _ := args["workspace_name"].(string)
+		// Check if the required arguments are provided
+		if projectsDirectory == "" || workspaceName == "" {
+			return mcp.NewToolResultText("Please provide all the required arguments: projects_directory, workspace_name"), nil
+		}
+		
+		// Remove the workspace
+		log.Println("Removing workspace", workspaceName, "in directory", projectsDirectory)
+		
+		// Set environment variables for the script
+		env := os.Environ()
+		env = append(env, "PROJECTS_DIRECTORY="+projectsDirectory)
+		env = append(env, "WORKSPACE_NAME="+workspaceName)
+
+		// Execute the remove-workspace.sh script
+		cmd := exec.Command("./remove-workspace.sh")
+		cmd.Env = env
+		
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("Error executing remove-workspace.sh: %v", err)
+			log.Printf("Script output: %s", string(output))
+			return mcp.NewToolResultText(fmt.Sprintf("Failed to remove workspace: %v\nOutput: %s", err, string(output))), nil
+		}
+		
+		log.Printf("Workspace removal successful. Script output: %s", string(output))
+		return mcp.NewToolResultText(fmt.Sprintf("Workspace %s removed successfully!\n\nScript output:\n%s", workspaceName, string(output))), nil
+	})
+
+	// =================================================
+	// GET DOCKERFILES LIST TOOL:
+	// =================================================
+	getDockerfilesList := mcp.NewTool("get_dockerfiles_list",
+		mcp.WithDescription("Get list of all Dockerfile files (*.Dockerfile) in the current directory."),
+	)
+	s.AddTool(getDockerfilesList, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		// Get all *.Dockerfile files in current directory
+		files, err := filepath.Glob("*.Dockerfile")
+		if err != nil {
+			log.Printf("Error getting Dockerfile list: %v", err)
+			return mcp.NewToolResultText(fmt.Sprintf("Failed to get Dockerfile list: %v", err)), nil
+		}
+
+		if len(files) == 0 {
+			return mcp.NewToolResultText("No Dockerfile files found in the current directory."), nil
+		}
+
+		// Convert to JSON for structured response
+		jsonFiles, err := json.Marshal(files)
+		if err != nil {
+			log.Printf("Error marshaling Dockerfile list: %v", err)
+			return mcp.NewToolResultText(fmt.Sprintf("Found Dockerfiles: %v", files)), nil
+		}
+
+		log.Printf("Found %d Dockerfile(s): %v", len(files), files)
+		return mcp.NewToolResultText(string(jsonFiles)), nil
+	})
+
+	// =================================================
+	// GET WORKSPACES LIST TOOL:
+	// =================================================
+	getWorkspacesList := mcp.NewTool("get_workspaces_list",
+		mcp.WithDescription("Get list of workspace directories in the specified projects directory (first level only)."),
+		mcp.WithString("projects_directory",
+			mcp.Required(),
+			mcp.Description("The projects directory path to list workspaces from."),
+		),
+	)
+	s.AddTool(getWorkspacesList, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := request.GetArguments()
+		// Check if the required arguments are provided
+		if len(args) == 0 {
+			return mcp.NewToolResultText("Please provide the required argument: projects_directory"), nil
+		}
+		
+		// Extract the arguments
+		projectsDirectory, _ := args["projects_directory"].(string)
+		
+		// Check if the required arguments are provided
+		if projectsDirectory == "" {
+			return mcp.NewToolResultText("Please provide the required argument: projects_directory"), nil
+		}
+
+		// Check if directory exists
+		if _, err := os.Stat(projectsDirectory); os.IsNotExist(err) {
+			return mcp.NewToolResultText(fmt.Sprintf("Projects directory does not exist: %s", projectsDirectory)), nil
+		}
+
+		// Read directory entries
+		entries, err := os.ReadDir(projectsDirectory)
+		if err != nil {
+			log.Printf("Error reading projects directory %s: %v", projectsDirectory, err)
+			return mcp.NewToolResultText(fmt.Sprintf("Failed to read projects directory: %v", err)), nil
+		}
+
+		// Filter only directories
+		var directories []string
+		for _, entry := range entries {
+			if entry.IsDir() {
+				directories = append(directories, entry.Name())
+			}
+		}
+
+		if len(directories) == 0 {
+			return mcp.NewToolResultText(fmt.Sprintf("No workspace directories found in: %s", projectsDirectory)), nil
+		}
+
+		// Convert to JSON for structured response
+		jsonDirs, err := json.Marshal(directories)
+		if err != nil {
+			log.Printf("Error marshaling workspace list: %v", err)
+			return mcp.NewToolResultText(fmt.Sprintf("Found workspaces: %v", directories)), nil
+		}
+
+		log.Printf("Found %d workspace(s) in %s: %v", len(directories), projectsDirectory, directories)
+		return mcp.NewToolResultText(string(jsonDirs)), nil
 	})
 
 	// Start the HTTP server

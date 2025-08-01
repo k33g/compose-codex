@@ -1,0 +1,36 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- IDE Window Frame -->
+  <rect x="2" y="3" width="20" height="18" rx="2" fill="#FFFFFF" stroke="#000000" stroke-width="1"/>
+  
+  <!-- Title Bar -->
+  <rect x="2" y="3" width="20" height="3" rx="2" fill="#E5E5E5"/>
+  
+  <!-- Window Controls -->
+  <circle cx="4.5" cy="4.5" r="0.5" fill="#CCCCCC"/>
+  <circle cx="6" cy="4.5" r="0.5" fill="#CCCCCC"/>
+  <circle cx="7.5" cy="4.5" r="0.5" fill="#CCCCCC"/>
+  
+  <!-- Side Panel (File Explorer) -->
+  <rect x="3" y="7" width="5" height="13" fill="#F0F0F0"/>
+  
+  <!-- Folder Icons -->
+  <rect x="3.5" y="8" width="1" height="0.8" fill="#666666"/>
+  <rect x="3.5" y="9.5" width="1" height="0.8" fill="#666666"/>
+  <rect x="4" y="10.2" width="0.8" height="0.6" fill="#999999"/>
+  <rect x="4" y="11.2" width="0.8" height="0.6" fill="#999999"/>
+  
+  <!-- Main Code Area -->
+  <rect x="9" y="7" width="12" height="13" fill="#FFFFFF"/>
+  
+  <!-- Code Lines -->
+  <rect x="10" y="8.5" width="6" height="0.5" fill="#333333"/>
+  <rect x="10" y="9.5" width="4" height="0.5" fill="#666666"/>
+  <rect x="10" y="10.5" width="8" height="0.5" fill="#333333"/>
+  <rect x="11" y="11.5" width="5" height="0.5" fill="#666666"/>
+  <rect x="11" y="12.5" width="7" height="0.5" fill="#333333"/>
+  <rect x="10" y="13.5" width="3" height="0.5" fill="#666666"/>
+  <rect x="10" y="14.5" width="6" height="0.5" fill="#333333"/>
+  
+  <!-- Cursor -->
+  <rect x="16" y="10.3" width="0.2" height="0.9" fill="#000000"/>
+</svg>
