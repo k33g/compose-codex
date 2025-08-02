@@ -61,6 +61,7 @@ func main() {
 	router.GET("/hello", hello)
 	router.POST("/workspace/initialize", configHandler)
 	router.POST("/workspace/start", startWorkspaceHandler)
+	router.GET("/workspace/start/stream/:workspace_name", startWorkspaceStreamHandler)
 	router.POST("/workspace/stop", stopWorkspaceHandler)
 	router.POST("/workspace/remove", removeWorkspaceHandler)
 	router.POST("/workspace/dockerfiles/list", dockerfilesListHandler)
@@ -134,6 +135,104 @@ func configHandler(ctx echo.Context) error {
 	}
 
 	return ctx.JSON(http.StatusOK, response)
+}
+
+func startWorkspaceStreamHandler(ctx echo.Context) error {
+	workspaceName := ctx.Param("workspace_name")
+	projectsDirectory := ctx.QueryParam("projects_directory")
+	httpPort := ctx.QueryParam("http_port")
+	repository := ctx.QueryParam("repository")
+	mcpServerURL := ctx.QueryParam("mcp_server_url")
+
+	if workspaceName == "" || projectsDirectory == "" || httpPort == "" {
+		return ctx.JSON(http.StatusBadRequest, HTTPMessageBody{Message: "Missing required parameters"})
+	}
+
+	if mcpServerURL == "" {
+		mcpServerURL = "http://host.docker.internal:9090/mcp"
+	}
+
+	logger.Infof("Starting workspace stream for: %s", workspaceName)
+
+	// Set headers for Server-Sent Events
+	ctx.Response().Header().Set("Content-Type", "text/event-stream")
+	ctx.Response().Header().Set("Cache-Control", "no-cache")
+	ctx.Response().Header().Set("Connection", "keep-alive")
+	ctx.Response().Header().Set("Access-Control-Allow-Origin", "*")
+	ctx.Response().Header().Set("Access-Control-Allow-Headers", "Cache-Control")
+
+	// Create a channel to send progress updates
+	progressChan := make(chan string, 100)
+	done := make(chan bool, 1)
+
+	// Start the workspace build in a goroutine
+	go func() {
+		defer close(progressChan)
+		defer func() { done <- true }()
+
+		// --- [MCP CLIENT] ---
+		mcpClient, err := tools.NewMCPClient(mcpCtx, mcpServerURL)
+		if err != nil {
+			progressChan <- fmt.Sprintf("data: {\"error\": \"Failed to create MCP client: %v\"}\n\n", err)
+			return
+		}
+
+		// Send initial progress
+		progressChan <- "data: {\"progress\": 10, \"message\": \"Initializing workspace...\"}\n\n"
+
+		// Create jsonStringArguments
+		configMap := map[string]interface{}{
+			"http_port":          httpPort,
+			"projects_directory": projectsDirectory,
+			"repository":         repository,
+			"workspace_name":     workspaceName,
+		}
+
+		jsonStringArguments, err := json.Marshal(configMap)
+		if err != nil {
+			progressChan <- fmt.Sprintf("data: {\"error\": \"Failed to marshal config: %v\"}\n\n", err)
+			return
+		}
+
+		progressChan <- "data: {\"progress\": 30, \"message\": \"Starting Docker build...\"}\n\n"
+
+		// Call MCP tool
+		toolResponse, err := mcpClient.CallTool(mcpCtx, "start_workspace", string(jsonStringArguments))
+		if err != nil {
+			progressChan <- fmt.Sprintf("data: {\"error\": \"Failed to start workspace: %v\"}\n\n", err)
+			return
+		}
+
+		progressChan <- "data: {\"progress\": 80, \"message\": \"Build completed, finalizing...\"}\n\n"
+
+		if toolResponse == nil || len(toolResponse.Content) == 0 {
+			progressChan <- "data: {\"error\": \"No content returned from MCP tool\"}\n\n"
+			return
+		}
+
+		projectName := strings.TrimSuffix(filepath.Base(repository), ".git")
+		accessURL := fmt.Sprintf("http://localhost:%s/?folder=/home/workspace/%s", httpPort, projectName)
+
+		progressChan <- fmt.Sprintf("data: {\"progress\": 100, \"message\": \"Workspace started successfully!\", \"completed\": true, \"access_url\": \"%s\"}\n\n", accessURL)
+	}()
+
+	// Send progress updates to client
+	for {
+		select {
+		case progress, ok := <-progressChan:
+			if !ok {
+				return nil
+			}
+			if _, err := ctx.Response().Write([]byte(progress)); err != nil {
+				return err
+			}
+			ctx.Response().Flush()
+		case <-done:
+			return nil
+		case <-ctx.Request().Context().Done():
+			return nil
+		}
+	}
 }
 
 func startWorkspaceHandler(ctx echo.Context) error {

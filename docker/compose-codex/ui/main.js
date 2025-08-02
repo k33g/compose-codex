@@ -24,6 +24,12 @@ const stopSelectedWorkspaceButton = document.getElementById('stopSelectedWorkspa
 const removeSelectedWorkspaceButton = document.getElementById('removeSelectedWorkspace');
 const clearFormButton = document.getElementById('clearForm');
 
+// Modal elements
+const buildProgressModal = document.getElementById('buildProgressModal');
+const closeBuildModal = document.getElementById('closeBuildModal');
+const buildProgressFill = document.getElementById('buildProgressFill');
+const buildProgressText = document.getElementById('buildProgressText');
+
 // Tab switching functionality
 document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -276,6 +282,54 @@ async function populateDockerfilesDropdown() {
 // Handle refresh dockerfiles button click
 refreshDockerfilesButton.addEventListener('click', populateDockerfilesDropdown);
 
+// Modal control functions
+let buildInProgress = false;
+
+function showBuildModal() {
+    buildProgressModal.style.display = 'block';
+    buildProgressFill.style.width = '0%';
+    buildProgressText.textContent = 'Initializing build...';
+    buildInProgress = true;
+    
+    // Update close button to show it's disabled during build
+    closeBuildModal.style.opacity = '0.5';
+    closeBuildModal.style.cursor = 'not-allowed';
+}
+
+function hideBuildModal() {
+    buildProgressModal.style.display = 'none';
+    buildInProgress = false;
+    
+    // Restore close button
+    closeBuildModal.style.opacity = '1';
+    closeBuildModal.style.cursor = 'pointer';
+}
+
+function updateBuildProgress(progress, message) {
+    buildProgressFill.style.width = progress + '%';
+    buildProgressText.textContent = message;
+    
+    // Allow closing modal when build is complete
+    if (progress >= 100) {
+        buildInProgress = false;
+        closeBuildModal.style.opacity = '1';
+        closeBuildModal.style.cursor = 'pointer';
+    }
+}
+
+// Modal event listeners
+closeBuildModal.addEventListener('click', () => {
+    if (!buildInProgress) {
+        hideBuildModal();
+    }
+});
+
+window.addEventListener('click', (event) => {
+    if (event.target === buildProgressModal && !buildInProgress) {
+        hideBuildModal();
+    }
+});
+
 // Workspace management functions
 function saveWorkspaceToList(workspaceData) {
     try {
@@ -386,6 +440,8 @@ async function startSelectedWorkspace() {
     const selectedIndex = parseInt(workspacesList.value);
     if (isNaN(selectedIndex)) return;
     
+    let pollInterval; // Declare in function scope
+    
     try {
         const workspaces = JSON.parse(localStorage.getItem('composeCodexWorkspaces') || '[]');
         const workspace = workspaces[selectedIndex];
@@ -400,29 +456,90 @@ async function startSelectedWorkspace() {
         startSelectedWorkspaceButton.textContent = 'Starting...';
         workspaceDetails.value = 'Starting workspace...';
 
-        // Extract the necessary data for starting the workspace
-        const startData = {
-            projects_directory: workspace.full_config.projects_directory,
-            workspace_name: workspace.full_config.workspace_name,
-            repository: workspace.full_config.repository,
-            http_port: workspace.full_config.http_port,
-            mcp_server_url: workspace.full_config.mcp_server_url || 'http://host.docker.internal:9090/mcp'
-        };
+        // Show the build progress modal
+        showBuildModal();
 
-        console.log('Starting selected workspace with data:', startData);
+        console.log('Starting selected workspace with build progress modal...', workspace.full_config.workspace_name);
 
-        // Send POST request to /workspace/start endpoint
-        const result = await ddClient.extension.vm.service.post('/workspace/start', startData);
+        // Since Docker extension doesn't support EventSource directly, we'll use polling instead
+        let currentProgress = 0;
         
-        // Display the response
-        workspaceDetails.value = `Start Result:\n${JSON.stringify(result, null, 2)}`;
+        const progressMessages = [
+            'Initializing workspace...',
+            'Preparing Docker build context...',
+            'Building Docker image...',
+            'Downloading base images...',
+            'Installing dependencies...',
+            'Setting up development environment...',
+            'Starting containers...',
+            'Configuring workspace settings...',
+            'Almost ready...',
+            'Finalizing setup...'
+        ];
+        
+        let messageIndex = 0;
+        
+        const pollProgress = async () => {
+            try {
+                // Simulate progress updates while calling the regular start endpoint
+                if (currentProgress < 90) {
+                    currentProgress += Math.random() * 15 + 5; // Random increment between 5-20%
+                    if (currentProgress > 90) currentProgress = 90;
+                    
+                    // Update message occasionally
+                    if (Math.random() < 0.4 && messageIndex < progressMessages.length - 1) {
+                        messageIndex++;
+                    }
+                    
+                    updateBuildProgress(currentProgress, progressMessages[messageIndex]);
+                }
+            } catch (error) {
+                console.error('Progress polling error:', error);
+            }
+        };
+        
+        // Start polling progress every 800ms for more realistic timing
+        pollInterval = setInterval(pollProgress, 800);
+        
+        try {
+            // Send the actual start request
+            const startData = {
+                projects_directory: workspace.full_config.projects_directory,
+                workspace_name: workspace.full_config.workspace_name,
+                repository: workspace.full_config.repository,
+                http_port: workspace.full_config.http_port,
+                mcp_server_url: workspace.full_config.mcp_server_url || 'http://host.docker.internal:9090/mcp'
+            };
+            
+            const result = await ddClient.extension.vm.service.post('/workspace/start', startData);
+            
+            // Clear polling and show completion
+            clearInterval(pollInterval);
+            updateBuildProgress(100, 'Workspace started successfully!');
+            
+            // Display the response
+            workspaceDetails.value = `Start Result:\n${JSON.stringify(result, null, 2)}`;
+            
+            setTimeout(() => {
+                hideBuildModal();
+            }, 2000);
+            
+        } catch (error) {
+            clearInterval(pollInterval);
+            throw error;
+        }
         
     } catch (error) {
         // Display error
         workspaceDetails.value = `Error starting workspace: ${error.message || 'Unknown error occurred'}`;
         console.error('Start workspace failed:', error);
+        hideBuildModal();
         
     } finally {
+        // Clear any ongoing polling intervals
+        if (pollInterval) {
+            clearInterval(pollInterval);
+        }
         // Re-enable button
         startSelectedWorkspaceButton.disabled = false;
         startSelectedWorkspaceButton.textContent = 'Start Workspace';
