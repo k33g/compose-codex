@@ -1,7 +1,8 @@
 # Compose Codex
 
 Spawn Web IDEs for Golang, NodeJS, ...
-> 🚧 work in progress
+> - 🚧 work in progress
+> - 🤓 it's a proof of concept
 
 ## Setup
 

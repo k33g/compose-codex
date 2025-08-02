@@ -20,6 +20,7 @@ const workspacesList = document.getElementById('workspacesList');
 const workspaceDetails = document.getElementById('workspaceDetails');
 const clearWorkspacesListButton = document.getElementById('clearWorkspacesList');
 const regenerateWorkspacesListButton = document.getElementById('regenerateWorkspacesList');
+const refreshWorkspaceStatusButton = document.getElementById('refreshWorkspaceStatus');
 const startSelectedWorkspaceButton = document.getElementById('startSelectedWorkspace');
 const stopSelectedWorkspaceButton = document.getElementById('stopSelectedWorkspace');
 const removeSelectedWorkspaceButton = document.getElementById('removeSelectedWorkspace');
@@ -374,11 +375,13 @@ function saveWorkspaceToList(workspaceData) {
 function populateWorkspacesList() {
     try {
         const workspaces = JSON.parse(localStorage.getItem('composeCodexWorkspaces') || '[]');
+        console.log(`Populating workspace list with ${workspaces.length} workspaces`);
         
         // Clear existing options
         workspacesList.innerHTML = '';
         
         if (workspaces.length === 0) {
+            console.log('No workspaces found in localStorage');
             workspacesList.innerHTML = '<option value="">No workspaces created yet...</option>';
             workspaceDetails.value = '';
             workspaceAccessLink.style.display = 'none';
@@ -391,14 +394,212 @@ function populateWorkspacesList() {
         workspaces.forEach((workspace, index) => {
             const option = document.createElement('option');
             option.value = index;
-            option.textContent = `${workspace.workspace_name} (${workspace.repository})`;
+            option.setAttribute('data-workspace-name', workspace.workspace_name);
+            
+            // Check if we have saved status
+            if (workspace.status && workspace.last_status_check) {
+                const statusIcon = workspace.status.is_running ? '🟢' : '🔴';
+                const statusText = workspace.status.is_running ? 'Running' : 'Stopped';
+                const lastCheck = new Date(workspace.last_status_check);
+                const now = new Date();
+                const ageMinutes = Math.floor((now - lastCheck) / (1000 * 60));
+                
+                option.textContent = `${workspace.workspace_name} (${workspace.repository}) - ${statusIcon} ${statusText}`;
+                option.setAttribute('data-status', JSON.stringify(workspace.status));
+                
+                // If status is older than 2 minutes, mark it as stale
+                if (ageMinutes > 2) {
+                    option.textContent += ' (stale)';
+                }
+            } else {
+                option.textContent = `${workspace.workspace_name} (${workspace.repository}) - Checking status...`;
+            }
+            
             workspacesList.appendChild(option);
         });
+        
+        // Only check status for workspaces that don't have recent status or are marked as stale
+        const workspacesToCheck = workspaces.filter(workspace => {
+            if (!workspace.status || !workspace.last_status_check) {
+                return true; // No status, need to check
+            }
+            
+            const lastCheck = new Date(workspace.last_status_check);
+            const now = new Date();
+            const ageMinutes = Math.floor((now - lastCheck) / (1000 * 60));
+            
+            return ageMinutes > 2; // Only check if status is older than 2 minutes
+        });
+        
+        if (workspacesToCheck.length > 0) {
+            console.log(`Checking status for ${workspacesToCheck.length} workspaces with stale status`);
+            checkAllWorkspaceStatuses(workspacesToCheck);
+        } else {
+            console.log('All workspace statuses are recent, skipping status check');
+        }
         
     } catch (error) {
         console.error('Error populating workspaces list:', error);
         workspacesList.innerHTML = '<option value="">Error loading workspaces...</option>';
         enableWorkspaceButtons(false);
+    }
+}
+
+async function checkAllWorkspaceStatuses(workspaces) {
+    const statusPromises = workspaces.map(async (workspace, index) => {
+        try {
+            const result = await ddClient.extension.vm.service.post('/workspace/status', {
+                projects_directory: workspace.full_config.projects_directory,
+                workspace_name: workspace.workspace_name
+            });
+            
+            return {
+                index: index,
+                workspace: workspace,
+                status: result
+            };
+        } catch (error) {
+            console.error(`Error checking status for ${workspace.workspace_name}:`, error);
+            return {
+                index: index,
+                workspace: workspace,
+                status: {
+                    status: 'error',
+                    is_running: false,
+                    container_info: 'Status check failed'
+                }
+            };
+        }
+    });
+    
+    // Wait for all status checks to complete
+    const results = await Promise.all(statusPromises);
+    
+    // Update the workspace list with status information and save to localStorage
+    // Use Promise.all to ensure all status updates are completed
+    await Promise.all(results.map(async (result) => {
+        // Update localStorage and UI using the centralized function
+        await updateWorkspaceStatus(result.workspace.workspace_name, result.status);
+    }));
+}
+
+async function updateWorkspaceStatus(workspaceName, newStatus) {
+    try {
+        console.log(`Updating status for ${workspaceName}:`, newStatus);
+        
+        // Get current workspaces from localStorage
+        const workspaces = JSON.parse(localStorage.getItem('composeCodexWorkspaces') || '[]');
+        
+        // Find the workspace and update its status
+        const workspaceIndex = workspaces.findIndex(ws => ws.workspace_name === workspaceName);
+        if (workspaceIndex >= 0) {
+            // Add/update status in the workspace object
+            workspaces[workspaceIndex].status = newStatus;
+            workspaces[workspaceIndex].last_status_check = new Date().toISOString();
+            
+            // Save back to localStorage
+            localStorage.setItem('composeCodexWorkspaces', JSON.stringify(workspaces));
+            console.log(`Status saved to localStorage for ${workspaceName} - Running: ${newStatus.is_running}`);
+        } else {
+            console.warn(`Workspace ${workspaceName} not found in localStorage`);
+        }
+        
+        // Update the UI list option
+        const listOption = Array.from(workspacesList.children).find(option => 
+            option.getAttribute('data-workspace-name') === workspaceName
+        );
+        
+        if (listOption) {
+            const workspace = workspaces[workspaceIndex];
+            const statusIcon = newStatus.is_running ? '🟢' : '🔴';
+            const statusText = newStatus.is_running ? 'Running' : 'Stopped';
+            
+            listOption.textContent = `${workspace.workspace_name} (${workspace.repository}) - ${statusIcon} ${statusText}`;
+            listOption.setAttribute('data-status', JSON.stringify(newStatus));
+        }
+        
+        // If this workspace is currently selected, update the details view
+        const selectedIndex = parseInt(workspacesList.value);
+        if (!isNaN(selectedIndex) && workspaces[selectedIndex] && workspaces[selectedIndex].workspace_name === workspaceName) {
+            showWorkspaceDetails(selectedIndex);
+        }
+        
+    } catch (error) {
+        console.error('Error updating workspace status:', error);
+    }
+}
+
+function saveAllWorkspaceStatuses() {
+    try {
+        const workspaces = JSON.parse(localStorage.getItem('composeCodexWorkspaces') || '[]');
+        console.log('Manually saving all workspace statuses to localStorage');
+        localStorage.setItem('composeCodexWorkspaces', JSON.stringify(workspaces));
+        return true;
+    } catch (error) {
+        console.error('Error manually saving workspace statuses:', error);
+        return false;
+    }
+}
+
+function cleanupDuplicateWorkspaces() {
+    try {
+        const workspaces = JSON.parse(localStorage.getItem('composeCodexWorkspaces') || '[]');
+        const uniqueWorkspaces = [];
+        const seenNames = new Set();
+        
+        for (const workspace of workspaces) {
+            if (!seenNames.has(workspace.workspace_name)) {
+                seenNames.add(workspace.workspace_name);
+                uniqueWorkspaces.push(workspace);
+            } else {
+                console.log(`Removing duplicate workspace: ${workspace.workspace_name}`);
+            }
+        }
+        
+        if (uniqueWorkspaces.length !== workspaces.length) {
+            console.log(`Cleaned up ${workspaces.length - uniqueWorkspaces.length} duplicate workspaces`);
+            localStorage.setItem('composeCodexWorkspaces', JSON.stringify(uniqueWorkspaces));
+            return true;
+        }
+        
+        return false;
+    } catch (error) {
+        console.error('Error cleaning up duplicate workspaces:', error);
+        return false;
+    }
+}
+
+async function refreshWorkspaceStatuses() {
+    try {
+        // Disable button and show loading state
+        refreshWorkspaceStatusButton.disabled = true;
+        refreshWorkspaceStatusButton.textContent = '⚡ Checking...';
+        
+        const workspaces = JSON.parse(localStorage.getItem('composeCodexWorkspaces') || '[]');
+        
+        if (workspaces.length === 0) {
+            alert('No workspaces to check status for.');
+            return;
+        }
+        
+        // Update all workspace options to show "Checking..."
+        Array.from(workspacesList.children).forEach((option, index) => {
+            if (workspaces[index]) {
+                option.textContent = `${workspaces[index].workspace_name} (${workspaces[index].repository}) - Checking status...`;
+            }
+        });
+        
+        // Check statuses
+        await checkAllWorkspaceStatuses(workspaces);
+        
+    } catch (error) {
+        console.error('Error refreshing workspace statuses:', error);
+        alert('Error refreshing workspace statuses. Check the console for details.');
+        
+    } finally {
+        // Re-enable button
+        refreshWorkspaceStatusButton.disabled = false;
+        refreshWorkspaceStatusButton.textContent = 'Refresh Status';
     }
 }
 
@@ -414,6 +615,32 @@ function showWorkspaceDetails(index) {
                 workspace.full_config.repository.split('/').pop().replace('.git', '') : 
                 workspace.workspace_name;
             const accessURL = `http://localhost:${workspace.full_config.http_port}/?folder=/home/workspace/${projectName}`;
+            
+            // Get status information from the workspace object or selected option
+            let statusInfo = 'Status: Unknown';
+            
+            if (workspace.status) {
+                // Use saved status from localStorage
+                const statusIcon = workspace.status.is_running ? '🟢' : '🔴';
+                const lastCheck = workspace.last_status_check ? 
+                    new Date(workspace.last_status_check).toLocaleString() : 'Never';
+                statusInfo = `Status: ${statusIcon} ${workspace.status.is_running ? 'Running' : 'Stopped'} (${workspace.status.container_info})
+Last checked: ${lastCheck}`;
+            } else {
+                // Fallback to option data
+                const selectedOption = workspacesList.children[index];
+                const statusData = selectedOption ? selectedOption.getAttribute('data-status') : null;
+                
+                if (statusData) {
+                    try {
+                        const status = JSON.parse(statusData);
+                        const statusIcon = status.is_running ? '🟢' : '🔴';
+                        statusInfo = `Status: ${statusIcon} ${status.is_running ? 'Running' : 'Stopped'} (${status.container_info})`;
+                    } catch (e) {
+                        statusInfo = 'Status: Checking...';
+                    }
+                }
+            }
             
             // Show and configure the access link
             workspaceAccessLink.style.display = 'inline-block';
@@ -464,6 +691,7 @@ function showWorkspaceDetails(index) {
             const details = `Workspace Name: ${workspace.workspace_name}
 Repository: ${workspace.repository}
 Created: ${new Date(workspace.created_at).toLocaleString()}
+${statusInfo}
 Access URL: ${accessURL}
 
 Full Configuration:
@@ -528,11 +756,13 @@ async function regenerateWorkspacesList() {
                 const regeneratedWorkspaces = workspacesList.map(workspaceName => {
                     const existingWorkspace = existingWorkspaceMap.get(workspaceName);
                     
-                    // If workspace exists, preserve its configuration
+                    // If workspace exists, preserve its configuration AND status
                     if (existingWorkspace) {
                         return {
                             ...existingWorkspace,
-                            created_at: existingWorkspace.created_at || new Date().toISOString() // Preserve original creation date
+                            created_at: existingWorkspace.created_at || new Date().toISOString(), // Preserve original creation date
+                            status: existingWorkspace.status, // Preserve status
+                            last_status_check: existingWorkspace.last_status_check // Preserve last check time
                         };
                     }
                     
@@ -558,22 +788,36 @@ async function regenerateWorkspacesList() {
                     };
                 });
                 
+                // Remove any potential duplicates by workspace name
+                const uniqueWorkspaces = [];
+                const seenNames = new Set();
+                
+                for (const workspace of regeneratedWorkspaces) {
+                    if (!seenNames.has(workspace.workspace_name)) {
+                        seenNames.add(workspace.workspace_name);
+                        uniqueWorkspaces.push(workspace);
+                    }
+                }
+                
+                console.log(`Filtered ${regeneratedWorkspaces.length} workspaces down to ${uniqueWorkspaces.length} unique workspaces`);
+                
                 // Save to localStorage
-                localStorage.setItem('composeCodexWorkspaces', JSON.stringify(regeneratedWorkspaces));
+                localStorage.setItem('composeCodexWorkspaces', JSON.stringify(uniqueWorkspaces));
                 
                 // Refresh the workspaces list display
                 populateWorkspacesList();
                 
-                const newWorkspaces = regeneratedWorkspaces.filter(ws => !existingWorkspaceMap.has(ws.workspace_name));
-                const preservedWorkspaces = regeneratedWorkspaces.filter(ws => existingWorkspaceMap.has(ws.workspace_name));
+                const newWorkspaces = uniqueWorkspaces.filter(ws => !existingWorkspaceMap.has(ws.workspace_name));
+                const preservedWorkspaces = uniqueWorkspaces.filter(ws => existingWorkspaceMap.has(ws.workspace_name));
                 
-                let message = `Successfully regenerated workspace list with ${regeneratedWorkspaces.length} workspace(s).`;
+                let message = `Successfully regenerated workspace list with ${uniqueWorkspaces.length} workspace(s).`;
                 if (newWorkspaces.length > 0) {
                     message += `\n- New workspaces found: ${newWorkspaces.length}`;
                 }
                 if (preservedWorkspaces.length > 0) {
                     message += `\n- Existing configurations preserved: ${preservedWorkspaces.length}`;
                 }
+                message += `\n\nChecking workspace statuses...`;
                 alert(message);
             } else {
                 alert('No workspaces found in the projects directory.');
@@ -683,6 +927,15 @@ async function startSelectedWorkspace() {
             // Display the response
             workspaceDetails.value = `Start Result:\n${JSON.stringify(result, null, 2)}`;
             
+            // Update workspace status to running
+            const runningStatus = {
+                status: 'success',
+                is_running: true,
+                container_info: 'Started successfully',
+                workspace_name: workspace.workspace_name
+            };
+            await updateWorkspaceStatus(workspace.workspace_name, runningStatus);
+            
             setTimeout(() => {
                 hideBuildModal();
             }, 2000);
@@ -698,6 +951,23 @@ async function startSelectedWorkspace() {
         console.error('Start workspace failed:', error);
         hideBuildModal();
         
+        // Update workspace status to error
+        try {
+            const workspaces = JSON.parse(localStorage.getItem('composeCodexWorkspaces') || '[]');
+            const workspace = workspaces[selectedIndex];
+            if (workspace) {
+                const errorStatus = {
+                    status: 'error',
+                    is_running: false,
+                    container_info: 'Start failed: ' + (error.message || 'Unknown error'),
+                    workspace_name: workspace.workspace_name
+                };
+                await updateWorkspaceStatus(workspace.workspace_name, errorStatus);
+            }
+        } catch (statusError) {
+            console.error('Error updating status after start failure:', statusError);
+        }
+        
     } finally {
         // Clear any ongoing polling intervals
         if (pollInterval) {
@@ -705,7 +975,7 @@ async function startSelectedWorkspace() {
         }
         // Re-enable button
         startSelectedWorkspaceButton.disabled = false;
-        startSelectedWorkspaceButton.textContent = 'Start Workspace';
+        startSelectedWorkspaceButton.textContent = 'Start';
     }
 }
 
@@ -742,15 +1012,37 @@ async function stopSelectedWorkspace() {
         // Display the response
         workspaceDetails.value = `Stop Result:\n${JSON.stringify(result, null, 2)}`;
         
+        // Update workspace status to stopped
+        const stoppedStatus = {
+            status: 'success',
+            is_running: false,
+            container_info: 'Stopped successfully',
+            workspace_name: workspace.workspace_name
+        };
+        await updateWorkspaceStatus(workspace.workspace_name, stoppedStatus);
+        
     } catch (error) {
         // Display error
         workspaceDetails.value = `Error stopping workspace: ${error.message || 'Unknown error occurred'}`;
         console.error('Stop workspace failed:', error);
         
+        // Update workspace status to error
+        try {
+            const errorStatus = {
+                status: 'error',
+                is_running: false, // Assume stopped on error
+                container_info: 'Stop failed: ' + (error.message || 'Unknown error'),
+                workspace_name: workspace.workspace_name
+            };
+            await updateWorkspaceStatus(workspace.workspace_name, errorStatus);
+        } catch (statusError) {
+            console.error('Error updating status after stop failure:', statusError);
+        }
+        
     } finally {
         // Re-enable button
         stopSelectedWorkspaceButton.disabled = false;
-        stopSelectedWorkspaceButton.textContent = 'Stop Workspace';
+        stopSelectedWorkspaceButton.textContent = 'Stop';
     }
 }
 
@@ -812,7 +1104,7 @@ async function removeSelectedWorkspace() {
     } finally {
         // Re-enable button
         removeSelectedWorkspaceButton.disabled = false;
-        removeSelectedWorkspaceButton.textContent = 'Remove Workspace';
+        removeSelectedWorkspaceButton.textContent = 'Remove';
     }
 }
 
@@ -832,6 +1124,7 @@ workspacesList.addEventListener('change', (e) => {
 
 clearWorkspacesListButton.addEventListener('click', clearWorkspacesList);
 regenerateWorkspacesListButton.addEventListener('click', regenerateWorkspacesList);
+refreshWorkspaceStatusButton.addEventListener('click', refreshWorkspaceStatuses);
 startSelectedWorkspaceButton.addEventListener('click', startSelectedWorkspace);
 stopSelectedWorkspaceButton.addEventListener('click', stopSelectedWorkspace);
 removeSelectedWorkspaceButton.addEventListener('click', removeSelectedWorkspace);
@@ -963,8 +1256,64 @@ console.log('Compose Codex extension loaded');
 loadFormData();
 setupAutoSave();
 
+// Clean up any duplicate workspaces first
+cleanupDuplicateWorkspaces();
+
+// Debug: Log current workspace status from localStorage
+const currentWorkspaces = JSON.parse(localStorage.getItem('composeCodexWorkspaces') || '[]');
+console.log('Loaded workspaces from localStorage:', currentWorkspaces.map(ws => ({
+    name: ws.workspace_name,
+    hasStatus: !!ws.status,
+    isRunning: ws.status?.is_running,
+    lastCheck: ws.last_status_check
+})));
+
 // Populate Dockerfiles dropdown on page load
 populateDockerfilesDropdown();
 
 // Populate workspaces list on page load
 populateWorkspacesList();
+
+// Save workspace statuses before user leaves the page
+window.addEventListener('beforeunload', () => {
+    console.log('Page unloading, ensuring workspace statuses are saved');
+    saveAllWorkspaceStatuses();
+});
+
+// Also save periodically (every 30 seconds)
+setInterval(() => {
+    console.log('Periodic save of workspace statuses');
+    saveAllWorkspaceStatuses();
+}, 30000);
+
+// Repopulate workspace list when user comes back to this tab/extension
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+        console.log('Page became visible, repopulating workspace list');
+        populateWorkspacesList();
+    }
+});
+
+// Also listen for focus events
+window.addEventListener('focus', () => {
+    console.log('Window gained focus, repopulating workspace list');
+    populateWorkspacesList();
+});
+
+// Debug function to check localStorage state (can be called from browser console)
+window.debugWorkspaces = function() {
+    const workspaces = JSON.parse(localStorage.getItem('composeCodexWorkspaces') || '[]');
+    console.log('=== Workspace Debug Info ===');
+    console.log(`Total workspaces in localStorage: ${workspaces.length}`);
+    workspaces.forEach((ws, index) => {
+        console.log(`${index + 1}. ${ws.workspace_name}`, {
+            repository: ws.repository,
+            hasStatus: !!ws.status,
+            isRunning: ws.status?.is_running,
+            lastCheck: ws.last_status_check,
+            created: ws.created_at
+        });
+    });
+    console.log('=== End Debug Info ===');
+    return workspaces;
+};
