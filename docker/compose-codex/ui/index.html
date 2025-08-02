@@ -192,6 +192,31 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        .workspace-access-link {
+            color: #007cbb;
+            text-decoration: none;
+            font-size: 14px;
+            padding: 8px 12px;
+            border: 2px solid #007cbb;
+            border-radius: 6px;
+            background-color: #f8f9fa;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .workspace-access-link:hover {
+            background-color: #007cbb;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,124,187,0.4);
+        }
+        .workspace-access-link:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0,124,187,0.3);
+        }
     </style>
 </head>
 <body>
@@ -307,6 +332,7 @@
                 <button type="button" id="stopSelectedWorkspace" disabled>Stop Workspace</button>
                 <button type="button" id="removeSelectedWorkspace" disabled>Remove Workspace</button>
                 <button type="button" id="clearWorkspacesList">Clear All</button>
+                <button type="button" id="regenerateWorkspacesList">Rebuild</button>
             </div>
 
             <div class="form-group">
@@ -317,7 +343,10 @@
             </div>
 
             <div class="form-group" style="margin-top: 20px;">
-                <label for="workspaceDetails">Workspace Details:</label>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                    <label for="workspaceDetails">Workspace Details:</label>
+                    <a id="workspaceAccessLink" href="#" target="_blank" class="workspace-access-link" style="display: none;">🌐 Open Web IDE</a>
+                </div>
                 <textarea id="workspaceDetails" placeholder="Select a workspace from the list above to see its details..." readonly rows="8" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; resize: vertical;"></textarea>
             </div>
         </div>
