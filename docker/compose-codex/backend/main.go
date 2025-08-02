@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -66,6 +67,7 @@ func main() {
 	router.POST("/workspace/remove", removeWorkspaceHandler)
 	router.POST("/workspace/dockerfiles/list", dockerfilesListHandler)
 	router.POST("/workspace/list", workspacesListHandler)
+	router.POST("/workspace/status", workspaceStatusHandler)
 	router.POST("/chat", chatHandler)
 
 	logger.Fatal(router.Start(startURL))
@@ -524,6 +526,84 @@ func workspacesListHandler(ctx echo.Context) error {
 	return ctx.JSON(http.StatusOK, response)
 }
 
+func workspaceStatusHandler(ctx echo.Context) error {
+	var request WorkspaceStatusRequest
+	if err := ctx.Bind(&request); err != nil {
+		logger.Errorf("Failed to bind workspace status request: %v", err)
+		return ctx.JSON(http.StatusBadRequest, HTTPMessageBody{Message: "Invalid JSON payload"})
+	}
+
+	if request.ProjectsDirectory == "" || request.WorkspaceName == "" {
+		return ctx.JSON(http.StatusBadRequest, HTTPMessageBody{Message: "projects_directory and workspace_name are required"})
+	}
+
+	logger.Infof("Checking status for workspace: %s in directory: %s", request.WorkspaceName, request.ProjectsDirectory)
+
+	// Check Docker container status by running docker compose ps
+	cmd := exec.Command("docker", "compose", "ps", "--format", "json")
+	cmd.Dir = filepath.Join(request.ProjectsDirectory, request.WorkspaceName)
+	
+	output, err := cmd.Output()
+	if err != nil {
+		logger.Errorf("Failed to check workspace status: %v", err)
+		// If command fails, workspace is likely not running
+		response := WorkspaceStatusResponse{
+			Status:        "success",
+			Message:       "Workspace status checked",
+			WorkspaceName: request.WorkspaceName,
+			IsRunning:     false,
+			ContainerInfo: "Not running or not found",
+		}
+		return ctx.JSON(http.StatusOK, response)
+	}
+
+	// Parse the JSON output to check container status
+	var containers []map[string]interface{}
+	if err := json.Unmarshal(output, &containers); err != nil {
+		logger.Errorf("Failed to parse docker compose output: %v", err)
+		response := WorkspaceStatusResponse{
+			Status:        "success",
+			Message:       "Workspace status checked",
+			WorkspaceName: request.WorkspaceName,
+			IsRunning:     false,
+			ContainerInfo: "Status unknown",
+		}
+		return ctx.JSON(http.StatusOK, response)
+	}
+
+	// Check if any containers are running
+	isRunning := false
+	containerInfo := "No containers found"
+	
+	if len(containers) > 0 {
+		runningContainers := 0
+		totalContainers := len(containers)
+		
+		for _, container := range containers {
+			if state, ok := container["State"].(string); ok && (state == "running" || state == "Up") {
+				runningContainers++
+				isRunning = true
+			}
+		}
+		
+		if isRunning {
+			containerInfo = fmt.Sprintf("%d/%d containers running", runningContainers, totalContainers)
+		} else {
+			containerInfo = fmt.Sprintf("%d containers stopped", totalContainers)
+		}
+	}
+
+	response := WorkspaceStatusResponse{
+		Status:        "success",
+		Message:       "Workspace status checked",
+		WorkspaceName: request.WorkspaceName,
+		IsRunning:     isRunning,
+		ContainerInfo: containerInfo,
+	}
+
+	return ctx.JSON(http.StatusOK, response)
+}
+
 type HTTPMessageBody struct {
 	Message string
 }
@@ -582,6 +662,19 @@ type WorkspacesListResponse struct {
 	Message           string `json:"message"`
 	ProjectsDirectory string `json:"projects_directory"`
 	Workspaces        string `json:"workspaces"`
+}
+
+type WorkspaceStatusRequest struct {
+	ProjectsDirectory string `json:"projects_directory"`
+	WorkspaceName     string `json:"workspace_name"`
+}
+
+type WorkspaceStatusResponse struct {
+	Status        string `json:"status"`
+	Message       string `json:"message"`
+	WorkspaceName string `json:"workspace_name"`
+	IsRunning     bool   `json:"is_running"`
+	ContainerInfo string `json:"container_info"`
 }
 
 func GetChatAgent(ctx context.Context, name string, appConfig config.Config, contentData data.PromptData, clientEngine openai.Client) (*agents.Agent, error) {
