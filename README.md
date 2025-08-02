@@ -4,6 +4,114 @@ Spawn Web IDEs for Golang, NodeJS, ...
 > - 🚧 work in progress
 > - 🤓 it's a proof of concept
 
+## Architecture
+
+Compose Codex is a comprehensive system for managing containerized development workspaces, built on a modular architecture that leverages the Model Context Protocol (MCP) for seamless integration between components.
+
+```mermaid
+graph TB
+    subgraph "Docker Desktop Extension"
+        UI[Web UI<br/>index.html + main.js]
+        Backend[Go Backend<br/>REST API]
+        UI <--> Backend
+    end
+    
+    subgraph "MCP Server"
+        MCPCore[MCP Server Core<br/>main.go]
+        Tools[MCP Tools<br/>- initializer_workspace<br/>- start_workspace<br/>- stop_workspace<br/>- remove_workspace<br/>- get_dockerfiles_list<br/>- get_workspaces_list]
+        Scripts[Shell Scripts<br/>- initialize-workspace.sh<br/>- start-local-workspace.sh<br/>- stop-workspace.sh<br/>- remove-workspace.sh]
+        
+        MCPCore --> Tools
+        Tools --> Scripts
+    end
+    
+    subgraph "Bot/CLI Client"
+        BotCore[Bot Application<br/>main.go]
+        BotUI[Text UI<br/>ui.go]
+        BotMCP[MCP Client<br/>tools/mcp.go]
+        
+        BotCore --> BotUI
+        BotCore --> BotMCP
+    end
+    
+    subgraph "Docker Environment"
+        Engine[Docker Engine]
+        Containers[Development Containers<br/>- Web IDE<br/>- Language Runtime<br/>- Development Tools]
+        Images[Base Images<br/>- golang.Dockerfile<br/>- nodejs.Dockerfile<br/>- python.Dockerfile<br/>- wasm.Dockerfile]
+        
+        Engine --> Containers
+        Images --> Containers
+    end
+    
+    subgraph "File System"
+        Projects[Projects Directory<br/>- Workspace Configs<br/>- SSH Keys<br/>- Source Code]
+        Templates[Dockerfile Templates<br/>- Language-specific<br/>- Development environments]
+        
+        Projects --> Engine
+        Templates --> Engine
+    end
+    
+    %% Connections
+    Backend -.->|HTTP/JSON| MCPCore
+    BotMCP -.->|HTTP/JSON| MCPCore
+    Scripts --> Engine
+    Scripts --> Projects
+    
+    %% Styling
+    classDef ui fill:#e1f5fe
+    classDef backend fill:#f3e5f5
+    classDef mcp fill:#e8f5e8
+    classDef docker fill:#fff3e0
+    classDef storage fill:#fce4ec
+    
+    class UI ui
+    class Backend,BotCore backend
+    class MCPCore,Tools,Scripts,BotMCP mcp
+    class Engine,Containers,Images docker
+    class Projects,Templates storage
+```
+
+### Component Overview
+
+#### 🐳 **Docker Desktop Extension**
+- **Frontend (UI)**: Web-based interface built with HTML/JavaScript for workspace management
+- **Backend**: Go REST API server that processes workspace operations and communicates with the MCP server
+- **Features**: Workspace creation, status monitoring, build progress tracking, and lifecycle management
+
+#### 🔧 **MCP Server (Core)**
+- **Purpose**: Central orchestration layer that implements the Model Context Protocol
+- **Location**: Root directory (`main.go`)
+- **Tools Provided**:
+  - `initializer_workspace`: Creates new development workspaces
+  - `start_workspace`: Launches containerized environments  
+  - `stop_workspace`: Stops running workspaces
+  - `remove_workspace`: Cleans up workspace resources
+  - `get_dockerfiles_list`: Lists available development templates
+  - `get_workspaces_list`: Retrieves existing workspace information
+
+#### 🤖 **Bot/CLI Client (Use Case)**
+- **Purpose**: Command-line interface demonstrating MCP integration
+- **Location**: `bot/` directory
+- **Features**: Text-based UI for workspace management and MCP tool interaction
+- **Use Case**: Shows how external applications can integrate with the MCP server
+
+#### 🏗️ **Development Infrastructure**
+- **Docker Engine**: Manages containerized development environments
+- **Base Images**: Language-specific Dockerfiles (Go, Node.js, Python, WebAssembly)
+- **Workspaces**: Isolated development environments with Web IDEs
+- **Storage**: Project files, SSH keys, and configuration management
+
+### Communication Flow
+
+1. **User Interaction**: Users interact through either the Docker Desktop extension UI or the Bot CLI
+2. **API Layer**: Frontend sends requests to the Go backend (Extension) or Bot processes commands (CLI)  
+3. **MCP Protocol**: Backend components communicate with the MCP server using HTTP/JSON
+4. **Tool Execution**: MCP server executes appropriate tools and shell scripts
+5. **Docker Integration**: Scripts manage Docker containers, images, and workspace lifecycle
+6. **File System**: Workspaces are persisted in the projects directory with proper configuration
+
+This architecture enables modular development, easy integration of new clients, and centralized workspace management through the MCP protocol.
+
 ## Setup
 
 ### Start the MCP Server
