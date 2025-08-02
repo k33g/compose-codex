@@ -19,6 +19,7 @@ const refreshDockerfilesButton = document.getElementById('refreshDockerfiles');
 const workspacesList = document.getElementById('workspacesList');
 const workspaceDetails = document.getElementById('workspaceDetails');
 const clearWorkspacesListButton = document.getElementById('clearWorkspacesList');
+const regenerateWorkspacesListButton = document.getElementById('regenerateWorkspacesList');
 const startSelectedWorkspaceButton = document.getElementById('startSelectedWorkspace');
 const stopSelectedWorkspaceButton = document.getElementById('stopSelectedWorkspace');
 const removeSelectedWorkspaceButton = document.getElementById('removeSelectedWorkspace');
@@ -29,6 +30,9 @@ const buildProgressModal = document.getElementById('buildProgressModal');
 const closeBuildModal = document.getElementById('closeBuildModal');
 const buildProgressFill = document.getElementById('buildProgressFill');
 const buildProgressText = document.getElementById('buildProgressText');
+
+// Workspace access link
+const workspaceAccessLink = document.getElementById('workspaceAccessLink');
 
 // Tab switching functionality
 document.querySelectorAll('.tab').forEach(tab => {
@@ -377,6 +381,8 @@ function populateWorkspacesList() {
         if (workspaces.length === 0) {
             workspacesList.innerHTML = '<option value="">No workspaces created yet...</option>';
             workspaceDetails.value = '';
+            workspaceAccessLink.style.display = 'none';
+            workspaceAccessLink.onclick = null;
             enableWorkspaceButtons(false);
             return;
         }
@@ -403,10 +409,62 @@ function showWorkspaceDetails(index) {
         if (index >= 0 && index < workspaces.length) {
             const workspace = workspaces[index];
             
+            // Generate access URL
+            const projectName = workspace.full_config.repository ? 
+                workspace.full_config.repository.split('/').pop().replace('.git', '') : 
+                workspace.workspace_name;
+            const accessURL = `http://localhost:${workspace.full_config.http_port}/?folder=/home/workspace/${projectName}`;
+            
+            // Show and configure the access link
+            workspaceAccessLink.style.display = 'inline-block';
+            workspaceAccessLink.href = accessURL;
+            workspaceAccessLink.title = `Open ${workspace.workspace_name} Web IDE`;
+            
+            // Debug logging
+            console.log('Setting workspace access link:', accessURL);
+            
+            // Remove any existing click handlers and add a new one
+            workspaceAccessLink.onclick = function(e) {
+                e.preventDefault();
+                console.log('Workspace access link clicked:', accessURL);
+                
+                // Try different methods to open the URL
+                try {
+                    // Method 1: Try using Docker Desktop client API if available
+                    if (ddClient && ddClient.host && ddClient.host.openExternal) {
+                        ddClient.host.openExternal(accessURL);
+                    } else {
+                        // Method 2: Direct window.open
+                        const newWindow = window.open(accessURL, '_blank', 'noopener,noreferrer');
+                        if (!newWindow || newWindow.closed || typeof newWindow.closed == 'undefined') {
+                            // Method 3: Create a temporary link and click it
+                            const tempLink = document.createElement('a');
+                            tempLink.href = accessURL;
+                            tempLink.target = '_blank';
+                            tempLink.rel = 'noopener noreferrer';
+                            document.body.appendChild(tempLink);
+                            tempLink.click();
+                            document.body.removeChild(tempLink);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error opening workspace URL:', error);
+                    // Show a user-friendly modal or alert with the URL
+                    if (confirm(`Unable to automatically open the workspace. Would you like to copy the URL to clipboard?\n\nURL: ${accessURL}`)) {
+                        navigator.clipboard.writeText(accessURL).then(() => {
+                            alert('URL copied to clipboard!');
+                        }).catch(() => {
+                            prompt('Please copy this URL manually:', accessURL);
+                        });
+                    }
+                }
+            };
+            
             // Format workspace details
             const details = `Workspace Name: ${workspace.workspace_name}
 Repository: ${workspace.repository}
 Created: ${new Date(workspace.created_at).toLocaleString()}
+Access URL: ${accessURL}
 
 Full Configuration:
 ${JSON.stringify(workspace.full_config, null, 2)}`;
@@ -414,11 +472,15 @@ ${JSON.stringify(workspace.full_config, null, 2)}`;
             workspaceDetails.value = details;
         } else {
             workspaceDetails.value = '';
+            workspaceAccessLink.style.display = 'none';
+            workspaceAccessLink.onclick = null; // Clean up click handler
         }
         
     } catch (error) {
         console.error('Error showing workspace details:', error);
         workspaceDetails.value = 'Error loading workspace details...';
+        workspaceAccessLink.style.display = 'none';
+        workspaceAccessLink.onclick = null; // Clean up click handler
     }
 }
 
@@ -427,6 +489,107 @@ function clearWorkspacesList() {
         localStorage.removeItem('composeCodexWorkspaces');
         populateWorkspacesList();
         workspaceDetails.value = '';
+        workspaceAccessLink.style.display = 'none';
+        workspaceAccessLink.onclick = null;
+    }
+}
+
+async function regenerateWorkspacesList() {
+    try {
+        // Disable button and show loading state
+        regenerateWorkspacesListButton.disabled = true;
+        regenerateWorkspacesListButton.textContent = 'Loading...';
+        
+        // Get projects directory from form or use default
+        const projectsDirectory = document.getElementById('projectsDirectory').value || 'projects';
+        
+        console.log('Regenerating workspaces list for directory:', projectsDirectory);
+        
+        // Send POST request to /workspace/list endpoint
+        const result = await ddClient.extension.vm.service.post('/workspace/list', {
+            projects_directory: projectsDirectory
+        });
+        
+        console.log('Workspace list response:', result);
+        
+        if (result && result.status === 'success' && result.workspaces) {
+            // Parse the workspaces JSON string
+            const workspacesList = JSON.parse(result.workspaces);
+            
+            if (Array.isArray(workspacesList) && workspacesList.length > 0) {
+                // Get existing workspaces to preserve any existing configuration
+                const existingWorkspaces = JSON.parse(localStorage.getItem('composeCodexWorkspaces') || '[]');
+                const existingWorkspaceMap = new Map();
+                existingWorkspaces.forEach(ws => {
+                    existingWorkspaceMap.set(ws.workspace_name, ws);
+                });
+                
+                // Create workspace entries for localStorage
+                const regeneratedWorkspaces = workspacesList.map(workspaceName => {
+                    const existingWorkspace = existingWorkspaceMap.get(workspaceName);
+                    
+                    // If workspace exists, preserve its configuration
+                    if (existingWorkspace) {
+                        return {
+                            ...existingWorkspace,
+                            created_at: existingWorkspace.created_at || new Date().toISOString() // Preserve original creation date
+                        };
+                    }
+                    
+                    // Create new workspace entry with default values
+                    return {
+                        workspace_name: workspaceName,
+                        repository: 'unknown', // We don't have this info from the list endpoint
+                        created_at: new Date().toISOString(),
+                        full_config: {
+                            workspace_name: workspaceName,
+                            projects_directory: projectsDirectory,
+                            repository: 'unknown',
+                            http_port: 8080 + Math.floor(Math.random() * 1000), // Random port between 8080-9080
+                            dockerfile_name: '_.Dockerfile',
+                            compose_file_name: 'compose.yml',
+                            offload_override_name: 'compose.offload.yml',
+                            key_name: '',
+                            git_user_email: '',
+                            git_user_name: '',
+                            git_host: 'github.com',
+                            mcp_server_url: 'http://host.docker.internal:9090/mcp'
+                        }
+                    };
+                });
+                
+                // Save to localStorage
+                localStorage.setItem('composeCodexWorkspaces', JSON.stringify(regeneratedWorkspaces));
+                
+                // Refresh the workspaces list display
+                populateWorkspacesList();
+                
+                const newWorkspaces = regeneratedWorkspaces.filter(ws => !existingWorkspaceMap.has(ws.workspace_name));
+                const preservedWorkspaces = regeneratedWorkspaces.filter(ws => existingWorkspaceMap.has(ws.workspace_name));
+                
+                let message = `Successfully regenerated workspace list with ${regeneratedWorkspaces.length} workspace(s).`;
+                if (newWorkspaces.length > 0) {
+                    message += `\n- New workspaces found: ${newWorkspaces.length}`;
+                }
+                if (preservedWorkspaces.length > 0) {
+                    message += `\n- Existing configurations preserved: ${preservedWorkspaces.length}`;
+                }
+                alert(message);
+            } else {
+                alert('No workspaces found in the projects directory.');
+            }
+        } else {
+            throw new Error(result?.message || 'Invalid response from server');
+        }
+        
+    } catch (error) {
+        console.error('Failed to regenerate workspaces list:', error);
+        alert(`Error regenerating workspace list: ${error.message || 'Unknown error occurred'}`);
+        
+    } finally {
+        // Re-enable button
+        regenerateWorkspacesListButton.disabled = false;
+        regenerateWorkspacesListButton.textContent = 'Rebuild';
     }
 }
 
@@ -661,11 +824,14 @@ workspacesList.addEventListener('change', (e) => {
         enableWorkspaceButtons(true);
     } else {
         workspaceDetails.value = '';
+        workspaceAccessLink.style.display = 'none';
+        workspaceAccessLink.onclick = null;
         enableWorkspaceButtons(false);
     }
 });
 
 clearWorkspacesListButton.addEventListener('click', clearWorkspacesList);
+regenerateWorkspacesListButton.addEventListener('click', regenerateWorkspacesList);
 startSelectedWorkspaceButton.addEventListener('click', startSelectedWorkspace);
 stopSelectedWorkspaceButton.addEventListener('click', stopSelectedWorkspace);
 removeSelectedWorkspaceButton.addEventListener('click', removeSelectedWorkspace);

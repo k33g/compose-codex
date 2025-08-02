@@ -509,19 +509,16 @@ func workspacesListHandler(ctx echo.Context) error {
 
 	logger.Infof("🟢 Workspaces list response: %+v", toolResponse)
 
-	// Return the response from MCP tool
-	jsonResponse, err := json.Marshal(toolResponse.Content[0])
-	if err != nil {
-		logger.Errorf("Failed to marshal Dockerfiles list response: %v", err)
-		return ctx.JSON(http.StatusInternalServerError, HTTPMessageBody{Message: "Failed to marshal response"})
-	}
+	// Extract the workspaces list from the MCP tool response
+	workspacesList := toolResponse.Content[0].(mcp.TextContent).Text
+	logger.Infof("🗂️ Workspaces list: %v", workspacesList)
 
 	// Return the response from MCP tool
 	response := WorkspacesListResponse{
 		Status:            "success",
 		Message:           "Workspaces list retrieved successfully",
 		ProjectsDirectory: request.ProjectsDirectory,
-		Workspaces:        string(jsonResponse),
+		Workspaces:        workspacesList,
 	}
 
 	return ctx.JSON(http.StatusOK, response)
